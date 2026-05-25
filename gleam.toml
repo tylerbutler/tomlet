@@ -1,0 +1,16 @@
+name = "tomato"
+version = "0.1.0"
+
+description = "A round-tripping TOML parser and writer for Gleam, preserving comments, key order, and formatting."
+licences = ["Apache-2.0"]
+repository = { type = "github", user = "tylerbutler", repo = "tomato" }
+links = [{ title = "TOML spec", href = "https://toml.io/en/v1.0.0" }]
+#
+# For a full reference of all the available options, you can have a look at
+# https://gleam.run/writing-gleam/gleam-toml/.
+
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+
+[dev_dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
