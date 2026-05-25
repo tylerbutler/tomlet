@@ -65,7 +65,7 @@ before 1.0.
 ```sh
 just
 just ci
-gleam test
+just test
 gleam test --target javascript
 ./scripts/run_corpus_tests.py valid
 ./scripts/run_corpus_tests.py invalid

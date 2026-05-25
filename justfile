@@ -18,8 +18,10 @@ build:
     gleam build
 
 # Run tests
+# Includes the upstream TOML corpus checks.
 test:
     gleam test
+    python3 scripts/run_corpus_tests.py
 
 # Format code
 format:
