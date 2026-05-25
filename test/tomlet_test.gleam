@@ -1,7 +1,5 @@
-import gleam/option.{None}
 import gleeunit
 import tomlet
-import tomlet/ast
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -17,8 +15,6 @@ pub fn parse_basic_string_and_get_it_test() {
   let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
 
   assert tomlet.get_string(doc, ["name"]) == Ok("tomato")
-  assert tomlet.get(doc, ["name"])
-    == Ok(ast.String("tomato", ast.BasicString, source_text: "\"tomato\""))
 }
 
 pub fn parse_basic_int_and_get_it_test() {
@@ -186,29 +182,6 @@ pub fn insert_comment_before_preserves_crlf_line_endings_test() {
 
   assert tomlet.to_string(updated)
     == "name = \"tomato\"\r\n# released\r\nversion = \"0.1.0\"\r\n"
-}
-
-pub fn ast_shape_still_compiles_test() {
-  let table =
-    ast.Table(
-      entries: [
-        ast.Comment("# package metadata"),
-        ast.KeyValue(
-          leading: ast.Trivia(""),
-          key: ast.Key([ast.BareKeySegment("name")]),
-          value: ast.String(
-            "tomato",
-            ast.BasicString,
-            source_text: "\"tomato\"",
-          ),
-          trailing: ast.Trivia("\n"),
-        ),
-        ast.BlankLine,
-      ],
-      header: None,
-    )
-
-  let assert ast.Table(entries: [_, _, _], header: None) = table
 }
 
 pub fn set_string_updates_existing_key_preserving_trivia_test() {

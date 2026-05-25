@@ -1,3 +1,9 @@
+//// A round-tripping TOML parser and writer.
+////
+//// Tomlet parses TOML into an opaque `Document`, preserves comments and
+//// formatting during round-trips, and provides checked helpers for common
+//// reads and edits.
+
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -8,6 +14,10 @@ import tomlet/ast
 import tomlet/parser
 import tomlet/path
 
+/// A parsed TOML document.
+///
+/// Documents are opaque so Tomlet can preserve round-trip invariants while the
+/// internal syntax tree changes.
 pub opaque type Document {
   Document(
     root: ast.Table,
@@ -17,30 +27,67 @@ pub opaque type Document {
   )
 }
 
-pub type LineEnding {
+type LineEnding {
   Lf
   Crlf
 }
 
+/// Errors that can occur while parsing TOML input.
 pub type ParseError {
+  /// Raw bytes could not be decoded as valid TOML text.
   InvalidEncoding
-  Unexpected(got: String, expected: String, offset: Int)
-  KeyAlreadyInUse(key: List(String), offset: Int)
+
+  /// TOML syntax was invalid at a byte offset.
+  InvalidSyntax(kind: SyntaxErrorKind, offset: Int)
+
+  /// A key was defined more than once.
+  DuplicateKey(key: List(String), offset: Int)
 }
 
+/// Stable categories for TOML syntax errors.
+pub type SyntaxErrorKind {
+  /// A TOML value was expected.
+  ExpectedValue
+
+  /// A TOML key was expected.
+  ExpectedKey
+
+  /// A table header, such as `[table]` or `[[array.table]]`, was expected.
+  ExpectedTableHeader
+
+  /// TOML syntax was invalid, but the parser does not expose a narrower stable category.
+  InvalidToml
+}
+
+/// Errors that can occur while reading typed values from a document.
 pub type GetError {
+  /// No value exists at the requested key path.
   KeyNotFound(key: List(String))
+
+  /// A value exists at the requested key path, but it has a different TOML type.
   WrongType(key: List(String), expected: String)
 }
 
+/// Errors that can occur while editing a document.
 pub type EditError {
+  /// Edit paths must contain at least one key segment.
   EmptyKeyPath
+
+  /// A key segment cannot be emitted as TOML.
   InvalidKeySegment(segment: String)
+
+  /// Comments must be a single line.
   InvalidCommentText
+
+  /// The edit requires an existing key, but no value exists at that key path.
   MissingEditKey(key: List(String))
+
+  /// Inserting the key would conflict with an existing scalar, table, or array
+  /// of tables.
   KeyConflict(key: List(String))
 }
 
+/// Create an empty TOML document.
 pub fn new() -> Document {
   Document(
     root: ast.Table(entries: [], header: None),
@@ -50,10 +97,15 @@ pub fn new() -> Document {
   )
 }
 
+/// Parse TOML text into a document.
 pub fn parse(input: String) -> Result(Document, ParseError) {
   parse_string(input)
 }
 
+/// Parse TOML bytes into a document.
+///
+/// This validates UTF-8 input and accepts a UTF-8 byte order mark only at the
+/// start of the input.
 pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
   let utf8_bom = <<239, 187, 191>>
   let input_without_initial_bom = case bit_array.starts_with(input, utf8_bom) {
@@ -72,6 +124,67 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
         Ok(decoded) -> parse_string(decoded)
         Error(_) -> Error(InvalidEncoding)
       }
+  }
+}
+
+/// Convert a byte offset into a one-based line and column.
+///
+/// Offsets beyond the end of the input return the position just after the last
+/// character. CRLF is treated as a single line break.
+pub fn line_column(input: String, offset: Int) -> #(Int, Int) {
+  line_column_loop(string.to_utf_codepoints(input), offset, 0, 1, 1)
+}
+
+fn line_column_loop(
+  codepoints: List(UtfCodepoint),
+  target: Int,
+  current: Int,
+  line: Int,
+  column: Int,
+) -> #(Int, Int) {
+  case current >= target, codepoints {
+    True, _ -> #(line, column)
+    False, [] -> #(line, column)
+    False, [first, second, ..rest] -> {
+      case
+        string.utf_codepoint_to_int(first),
+        string.utf_codepoint_to_int(second)
+      {
+        13, 10 -> line_column_loop(rest, target, current + 2, line + 1, 1)
+        _, _ ->
+          line_column_next(
+            [first, second, ..rest],
+            target,
+            current,
+            line,
+            column,
+          )
+      }
+    }
+    False, remaining ->
+      line_column_next(remaining, target, current, line, column)
+  }
+}
+
+fn line_column_next(
+  codepoints: List(UtfCodepoint),
+  target: Int,
+  current: Int,
+  line: Int,
+  column: Int,
+) -> #(Int, Int) {
+  case codepoints {
+    [] -> #(line, column)
+    [codepoint, ..rest] -> {
+      case string.utf_codepoint_to_int(codepoint) {
+        10 -> line_column_loop(rest, target, current + 1, line + 1, 1)
+        13 -> line_column_loop(rest, target, current + 1, line + 1, 1)
+        _ -> {
+          let width = string.byte_size(string.from_utf_codepoints([codepoint]))
+          line_column_loop(rest, target, current + width, line, column + 1)
+        }
+      }
+    }
   }
 }
 
@@ -111,12 +224,21 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
             line_ending: line_ending,
             original_source: Some(input),
           ))
-        Error(parser.Unexpected(got, expected, offset)) ->
-          Error(Unexpected(got, expected, offset))
+        Error(parser.Unexpected(_got, expected, offset)) ->
+          Error(InvalidSyntax(syntax_error_kind(expected), offset))
         Error(parser.KeyAlreadyInUse(key, offset)) ->
-          Error(KeyAlreadyInUse(key, offset))
+          Error(DuplicateKey(key, offset))
       }
     }
+  }
+}
+
+fn syntax_error_kind(expected: String) -> SyntaxErrorKind {
+  case expected {
+    "value" -> ExpectedValue
+    "key" -> ExpectedKey
+    "[table]" -> ExpectedTableHeader
+    _ -> InvalidToml
   }
 }
 
@@ -127,6 +249,9 @@ fn drop_initial_bom(input: String) -> String {
   }
 }
 
+/// Emit a document as TOML text.
+///
+/// Unedited parsed documents round-trip to their original source text.
 pub fn to_string(doc: Document) -> String {
   case doc.original_source {
     Some(source) -> source
@@ -140,46 +265,54 @@ pub fn to_string(doc: Document) -> String {
   }
 }
 
+/// Read a TOML string value at a key path.
 pub fn get_string(
   doc: Document,
   key: List(String),
 ) -> Result(String, GetError) {
-  case get(doc, key) {
+  case get_value(doc, key) {
     Ok(ast.String(value, _, _)) -> Ok(value)
     Ok(_) -> Error(WrongType(key, "String"))
     Error(error) -> Error(error)
   }
 }
 
+/// Read a TOML integer value at a key path.
 pub fn get_int(doc: Document, key: List(String)) -> Result(Int, GetError) {
-  case get(doc, key) {
+  case get_value(doc, key) {
     Ok(ast.Int(value, _)) -> Ok(value)
     Ok(_) -> Error(WrongType(key, "Int"))
     Error(error) -> Error(error)
   }
 }
 
+/// Read a TOML boolean value at a key path.
 pub fn get_bool(doc: Document, key: List(String)) -> Result(Bool, GetError) {
-  case get(doc, key) {
+  case get_value(doc, key) {
     Ok(ast.Bool(value, _)) -> Ok(value)
     Ok(_) -> Error(WrongType(key, "Bool"))
     Error(error) -> Error(error)
   }
 }
 
+/// Read a TOML float value at a key path.
 pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
-  case get(doc, key) {
+  case get_value(doc, key) {
     Ok(ast.Float(value, _)) -> Ok(value)
     Ok(_) -> Error(WrongType(key, "Float"))
     Error(error) -> Error(error)
   }
 }
 
-pub fn get(doc: Document, key: List(String)) -> Result(ast.Value, GetError) {
+fn get_value(doc: Document, key: List(String)) -> Result(ast.Value, GetError) {
   path.get(doc.root, key)
   |> result.map_error(fn(_) { KeyNotFound(key) })
 }
 
+/// Set a TOML string value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
 pub fn set_string(
   doc: Document,
   key: List(String),
@@ -192,6 +325,10 @@ pub fn set_string(
   )
 }
 
+/// Set a TOML integer value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
 pub fn set_int(
   doc: Document,
   key: List(String),
@@ -200,6 +337,7 @@ pub fn set_int(
   set_value(doc, key, ast.Int(value, int.to_string(value)))
 }
 
+/// Remove an existing value from a document.
 pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
   case validate_edit_key(key) {
     Error(error) -> Error(error)
@@ -221,6 +359,9 @@ pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
   }
 }
 
+/// Insert a standalone comment before an existing key.
+///
+/// The comment text may include a leading `#`, but must not contain CR or LF.
 pub fn insert_comment_before(
   doc: Document,
   key: List(String),

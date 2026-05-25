@@ -43,9 +43,10 @@ let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
 ```
 
 Typed accessors include `get_string`, `get_int`, `get_bool`, and `get_float`.
-Use `get` when you need the underlying AST value, including TOML special
-floating-point values (`inf`, `-inf`, and `nan`) that are represented as
-`ast.SpecialFloat` for cross-target portability.
+
+Parse errors use stable variants for machine handling. `InvalidSyntax` carries a
+byte offset; use `tomlet.line_column(input, offset)` when displaying diagnostics
+to users.
 
 ## Checked edits
 
@@ -56,9 +57,8 @@ emitted as bare TOML keys when possible and quoted when needed.
 
 ## Public API
 
-The supported public API is `tomlet` plus the advanced `tomlet/ast` module.
-Other `tomlet/*` modules are internal implementation details and may change
-before 1.0.
+The supported public API is the top-level `tomlet` module. Other `tomlet/*`
+modules are internal implementation details and may change before 1.0.
 
 ## Development
 

@@ -2,6 +2,8 @@ import gleam/list
 import gleeunit
 import tomlet
 import tomlet/ast
+import tomlet/parser
+import tomlet/path
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -30,11 +32,11 @@ pub fn root_and_table_values_can_coexist_test() {
 }
 
 pub fn get_array_of_tables_test() {
-  let assert Ok(doc) =
-    tomlet.parse(
+  let assert Ok(table) =
+    parser.parse(
       "[[products]]\nname = \"Hammer\"\n[[products]]\nname = \"Nail\"\n",
     )
 
-  let assert Ok(ast.ArrayOfTables(items)) = tomlet.get(doc, ["products"])
+  let assert Ok(ast.ArrayOfTables(items)) = path.get(table, ["products"])
   assert list.length(items) == 2
 }

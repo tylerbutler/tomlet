@@ -3,9 +3,15 @@ import gleeunit
 import tomlet
 import tomlet/ast
 import tomlet/parser
+import tomlet/path
 
 pub fn main() -> Nil {
   gleeunit.main()
+}
+
+fn parse_value(input: String, key: List(String)) {
+  let assert Ok(table) = parser.parse(input)
+  path.get(table, key)
 }
 
 pub fn parse_booleans_test() {
@@ -22,30 +28,29 @@ pub fn parse_float_test() {
 }
 
 pub fn parse_exponent_float_repr_test() {
-  let assert Ok(doc) = tomlet.parse("ratio = 3e2\n")
-
-  assert tomlet.get(doc, ["ratio"]) == Ok(ast.Float(300.0, source_text: "3e2"))
+  assert parse_value("ratio = 3e2\n", ["ratio"])
+    == Ok(ast.Float(300.0, source_text: "3e2"))
 }
 
 pub fn parse_special_float_repr_test() {
-  let assert Ok(doc) =
-    tomlet.parse("positive = inf\nnegative = -inf\nnan = nan\n")
+  let input = "positive = inf\nnegative = -inf\nnan = nan\n"
+  let assert Ok(doc) = tomlet.parse(input)
 
-  assert tomlet.get(doc, ["positive"])
+  assert parse_value(input, ["positive"])
     == Ok(ast.SpecialFloat(ast.PositiveInfinity, source_text: "inf"))
-  assert tomlet.get(doc, ["negative"])
+  assert parse_value(input, ["negative"])
     == Ok(ast.SpecialFloat(ast.NegativeInfinity, source_text: "-inf"))
-  assert tomlet.get(doc, ["nan"])
+  assert parse_value(input, ["nan"])
     == Ok(ast.SpecialFloat(ast.NotANumber, source_text: "nan"))
   assert tomlet.to_string(doc) == "positive = inf\nnegative = -inf\nnan = nan\n"
 }
 
 pub fn parse_based_integer_values_test() {
-  let assert Ok(doc) = tomlet.parse("hex = 0xFF\noct = 0o755\nbin = 0b1010\n")
+  let input = "hex = 0xFF\noct = 0o755\nbin = 0b1010\n"
 
-  assert tomlet.get(doc, ["hex"]) == Ok(ast.Int(255, source_text: "0xFF"))
-  assert tomlet.get(doc, ["oct"]) == Ok(ast.Int(493, source_text: "0o755"))
-  assert tomlet.get(doc, ["bin"]) == Ok(ast.Int(10, source_text: "0b1010"))
+  assert parse_value(input, ["hex"]) == Ok(ast.Int(255, source_text: "0xFF"))
+  assert parse_value(input, ["oct"]) == Ok(ast.Int(493, source_text: "0o755"))
+  assert parse_value(input, ["bin"]) == Ok(ast.Int(10, source_text: "0b1010"))
 }
 
 pub fn signed_based_integer_values_are_rejected_test() {
@@ -64,9 +69,7 @@ pub fn signed_based_integer_values_are_rejected_test() {
 }
 
 pub fn parse_literal_string_test() {
-  let assert Ok(doc) = tomlet.parse("name = 'tomato\\nraw'\n")
-
-  assert tomlet.get(doc, ["name"])
+  assert parse_value("name = 'tomato\\nraw'\n", ["name"])
     == Ok(ast.String(
       "tomato\\nraw",
       ast.LiteralString,
@@ -75,18 +78,16 @@ pub fn parse_literal_string_test() {
 }
 
 pub fn parse_date_time_reprs_test() {
-  let assert Ok(doc) =
-    tomlet.parse("dob = 1979-05-27T07:32:00Z\nlocal = 1979-05-27\n")
+  let input = "dob = 1979-05-27T07:32:00Z\nlocal = 1979-05-27\n"
 
-  assert tomlet.get(doc, ["dob"])
+  assert parse_value(input, ["dob"])
     == Ok(ast.DateTime(source_text: "1979-05-27T07:32:00Z"))
-  assert tomlet.get(doc, ["local"]) == Ok(ast.Date(source_text: "1979-05-27"))
+  assert parse_value(input, ["local"])
+    == Ok(ast.Date(source_text: "1979-05-27"))
 }
 
 pub fn parse_array_of_ints_test() {
-  let assert Ok(doc) = tomlet.parse("ports = [8000, 8001, 8002]\n")
-
-  assert tomlet.get(doc, ["ports"])
+  assert parse_value("ports = [8000, 8001, 8002]\n", ["ports"])
     == Ok(ast.Array(
       [
         ast.ArrayItem(
@@ -110,20 +111,18 @@ pub fn parse_array_of_ints_test() {
 }
 
 pub fn parse_nested_arrays_test() {
-  let assert Ok(doc) = tomlet.parse("matrix = [[1, 2], [3, 4]]\n")
-
   let assert Ok(ast.Array([_, _], source_text: "[[1, 2], [3, 4]]")) =
-    tomlet.get(doc, ["matrix"])
+    parse_value("matrix = [[1, 2], [3, 4]]\n", ["matrix"])
 }
 
 pub fn parse_inline_table_test() {
-  let assert Ok(doc) =
-    tomlet.parse("package = { name = \"tomato\", version = \"0.1.0\" }\n")
-
   let assert Ok(ast.InlineTable(
     entries,
     source_text: "{ name = \"tomato\", version = \"0.1.0\" }",
-  )) = tomlet.get(doc, ["package"])
+  )) =
+    parse_value("package = { name = \"tomato\", version = \"0.1.0\" }\n", [
+      "package",
+    ])
   assert entries != []
 }
 
@@ -162,10 +161,22 @@ pub fn crlf_input_is_accepted_test() {
   assert tomlet.get_string(doc, ["name"]) == Ok("tomato")
 }
 
-pub fn parse_multiline_basic_string_test() {
-  let assert Ok(doc) = tomlet.parse("text = \"\"\"hello\nworld\"\"\"\n")
+pub fn line_column_returns_one_based_location_test() {
+  assert tomlet.line_column("name = 1\nbad = ???\n", 9) == #(2, 1)
+  assert tomlet.line_column("name = 1\nbad = ???\n", 15) == #(2, 7)
+}
 
-  assert tomlet.get(doc, ["text"])
+pub fn line_column_handles_crlf_input_test() {
+  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 10) == #(2, 1)
+  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 16) == #(2, 7)
+}
+
+pub fn line_column_clamps_offsets_past_end_test() {
+  assert tomlet.line_column("name = 1\n", 999) == #(2, 1)
+}
+
+pub fn parse_multiline_basic_string_test() {
+  assert parse_value("text = \"\"\"hello\nworld\"\"\"\n", ["text"])
     == Ok(ast.String(
       "hello\nworld",
       ast.MultiBasicString,
@@ -174,9 +185,7 @@ pub fn parse_multiline_basic_string_test() {
 }
 
 pub fn parse_multiline_literal_string_test() {
-  let assert Ok(doc) = tomlet.parse("text = '''hello\nworld'''\n")
-
-  assert tomlet.get(doc, ["text"])
+  assert parse_value("text = '''hello\nworld'''\n", ["text"])
     == Ok(ast.String(
       "hello\nworld",
       ast.MultiLiteralString,
@@ -186,17 +195,17 @@ pub fn parse_multiline_literal_string_test() {
 
 pub fn duplicate_key_returns_error_test() {
   assert tomlet.parse("name = \"one\"\nname = \"two\"\n")
-    == Error(tomlet.KeyAlreadyInUse(["name"], 13))
+    == Error(tomlet.DuplicateKey(["name"], 13))
 }
 
 pub fn unterminated_basic_string_returns_positioned_error_test() {
   assert tomlet.parse("name = \"tomato\n")
-    == Error(tomlet.Unexpected("\"tomato", "value", 7))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7))
 }
 
 pub fn invalid_bare_value_returns_positioned_error_test() {
   assert tomlet.parse("name = ???\n")
-    == Error(tomlet.Unexpected("???", "value", 7))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7))
 }
 
 pub fn parser_module_uses_consistent_parse_error_names_test() {
@@ -206,56 +215,57 @@ pub fn parser_module_uses_consistent_parse_error_names_test() {
 
 pub fn invalid_inline_array_item_returns_nested_error_test() {
   assert tomlet.parse("bad = [0xZZ]\n")
-    == Error(tomlet.Unexpected("0xZZ", "value", 7))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7))
 }
 
 pub fn invalid_inline_table_value_returns_nested_error_test() {
   assert tomlet.parse("bad = {inner=0xZZ}\n")
-    == Error(tomlet.Unexpected("0xZZ", "value", 13))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 13))
 }
 
 pub fn malformed_table_header_returns_positioned_error_test() {
   assert tomlet.parse("[package\n")
-    == Error(tomlet.Unexpected("[package", "[table]", 0))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedTableHeader, 0))
 }
 
 pub fn unclosed_quoted_table_header_key_returns_error_test() {
-  assert tomlet.parse("[']\n") == Error(tomlet.Unexpected("'", "key", 1))
+  assert tomlet.parse("[']\n")
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedKey, 1))
 }
 
 pub fn redefining_standard_table_returns_error_test() {
   assert tomlet.parse("[a]\nb = 1\n\n[a]\nc = 2\n")
-    == Error(tomlet.KeyAlreadyInUse(["a"], 11))
+    == Error(tomlet.DuplicateKey(["a"], 11))
 }
 
 pub fn redefining_dotted_key_table_returns_error_test() {
   assert tomlet.parse("[fruit]\napple.color = \"red\"\n\n[fruit.apple]\n")
-    == Error(tomlet.KeyAlreadyInUse(["fruit", "apple"], 29))
+    == Error(tomlet.DuplicateKey(["fruit", "apple"], 29))
 }
 
 pub fn dotted_key_cannot_append_to_explicit_table_from_parent_test() {
   assert tomlet.parse("[a.b.c]\nz = 9\n\n[a]\nb.c.t = \"nope\"\n")
-    == Error(tomlet.KeyAlreadyInUse(["a", "b", "c", "t"], 19))
+    == Error(tomlet.DuplicateKey(["a", "b", "c", "t"], 19))
 }
 
 pub fn standard_table_cannot_be_redefined_as_array_table_test() {
   assert tomlet.parse("[tbl]\n[[tbl]]\n")
-    == Error(tomlet.KeyAlreadyInUse(["tbl"], 6))
+    == Error(tomlet.DuplicateKey(["tbl"], 6))
 }
 
 pub fn dotted_key_cannot_append_to_array_table_from_parent_test() {
   assert tomlet.parse("[[a.b]]\n\n[a]\nb.y = 2\n")
-    == Error(tomlet.KeyAlreadyInUse(["a", "b", "y"], 13))
+    == Error(tomlet.DuplicateKey(["a", "b", "y"], 13))
 }
 
 pub fn array_table_parent_cannot_later_be_array_table_test() {
   assert tomlet.parse("[[albums.songs]]\nname = \"Glory Days\"\n\n[[albums]]\n")
-    == Error(tomlet.KeyAlreadyInUse(["albums"], 38))
+    == Error(tomlet.DuplicateKey(["albums"], 38))
 }
 
 pub fn invalid_float_returns_positioned_error_test() {
   assert tomlet.parse("ratio = 3.14.15\n")
-    == Error(tomlet.Unexpected("3.14.15", "value", 8))
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 8))
 }
 
 pub fn invalid_corpus_gap_rejections_test() {
