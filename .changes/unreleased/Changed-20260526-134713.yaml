@@ -1,0 +1,4 @@
+kind: Changed
+body: |-
+    Added inline examples to public API documentation for parsing, diagnostics, value inspection, and edit helpers
+time: 2026-05-26T13:47:13.839000000-07:00

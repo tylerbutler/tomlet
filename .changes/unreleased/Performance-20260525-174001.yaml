@@ -1,0 +1,5 @@
+kind: Performance
+body: |-
+    Scan TOML byte input for misplaced UTF-8 BOMs in linear time
+time: 2026-05-25T17:40:01.000000000-07:00
+

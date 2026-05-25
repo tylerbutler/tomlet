@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+    Reject TOML-forbidden control characters in inserted standalone comments
+time: 2026-05-25T17:40:00.000000000-07:00
+

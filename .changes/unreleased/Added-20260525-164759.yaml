@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+    Round-tripping TOML parser and writer for Gleam
+
+    Tomlet parses TOML 1.0.0 into an opaque document, validates UTF-8 input, exposes stable parse and edit errors, provides typed accessors for common value types, supports checked string, integer, boolean, and float edits, removes existing values, inserts standalone comments, and writes documents back out with surrounding trivia intact.
+time: 2026-05-25T16:47:59.689000000-07:00

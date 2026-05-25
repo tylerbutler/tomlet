@@ -1,0 +1,6 @@
+kind: MajorRelease
+body: |-
+    Initial 1.0.0 stable release
+
+    Tomlet is ready for its first stable release as a Gleam library for parsing, editing, and writing TOML while preserving comments, key order, and formatting.
+time: 2026-05-25T16:47:58.689000000-07:00

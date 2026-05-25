@@ -1,24 +1,25 @@
-name: test
+name: Publish
 
 on:
   push:
-    branches:
-      - master
-      - main
-  pull_request:
+    tags: ['v*']
 
 jobs:
-  test:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6
+
       - uses: erlef/setup-beam@fc68ffb90438ef2936bbb3251622353b3dcb2f93 # ratchet:erlef/setup-beam@v1
         with:
           otp-version: "28"
           gleam-version: "1.16.0"
           rebar3-version: "3"
-          # elixir-version: "1"
-      - run: sudo apt-get update
-      - run: sudo apt-get install -y just
+
       - run: gleam deps download
-      - run: just ci
+      - run: gleam test
+
+      - name: Publish to Hex.pm
+        run: gleam publish --yes
+        env:
+          HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
