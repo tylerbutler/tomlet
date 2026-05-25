@@ -2,7 +2,7 @@ name = "tomlet"
 version = "0.1.0"
 
 description = "A round-tripping TOML parser and writer for Gleam, preserving comments, key order, and formatting."
-licences = ["Apache-2.0"]
+licences = ["Apache-2.0", "MIT"]
 repository = { type = "github", user = "tylerbutler", repo = "tomlet" }
 links = [{ title = "TOML spec", href = "https://toml.io/en/v1.0.0" }]
 internal_modules = ["tomlet/ast", "tomlet/parser", "tomlet/path"]

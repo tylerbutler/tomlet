@@ -35,7 +35,22 @@ lint:
 clean:
     gleam clean
 
+# === CHANGELOG ===
+
+# Create a new changelog entry
+change:
+    changie new
+
+# Preview unreleased changelog
+changelog-preview:
+    changie batch auto --dry-run
+
+# Generate CHANGELOG.md
+changelog:
+    changie merge
+
 # Full validation workflow
 ci: format lint test build
 
 alias pr := ci
+alias cl := change
