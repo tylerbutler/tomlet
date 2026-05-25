@@ -1,16 +1,16 @@
-# Tomato — Product Requirements Document
+# Tomlet — Product Requirements Document
 
 **Status:** Draft v0.1 · **Owner:** @tylerbutler · **Last updated:** 2026-05-24
 
 ## 1. Summary
 
-Tomato is a pure-Gleam TOML 1.0.0 library that **parses, edits, and writes TOML
+Tomlet is a pure-Gleam TOML 1.0.0 library that **parses, edits, and writes TOML
 while preserving comments, key order, and formatting choices**. It fills a gap
 in the BEAM ecosystem: no existing Erlang, Elixir, or Gleam TOML library
 round-trips comments, and only `tomerl` (Erlang) can write TOML at all.
 
 The reference inspirations are Rust's [`toml_edit`](https://docs.rs/toml_edit)
-and Python's [`tomlkit`](https://github.com/python-poetry/tomlkit). Tomato is
+and Python's [`tomlkit`](https://github.com/python-poetry/tomlkit). Tomlet is
 **not** a fork of `tom`; it is a new library with a different AST shape
 designed from the start for lossless round-trip.
 
@@ -34,7 +34,7 @@ designed from the start for lossless round-trip.
 - TOML 1.1 / unreleased spec features (revisit when ratified).
 - Schema validation, codegen, or derive-style decoders.
 - Streaming / incremental parsing of huge documents.
-- A CLI. (Could ship later as a separate package, e.g. `tomato_cli`.)
+- A CLI. (Could ship later as a separate package, e.g. `tomlet_cli`.)
 - Performance parity with `tom` on hot parse paths. Correctness and
   round-trip fidelity come first; optimization is a later phase.
 
@@ -51,10 +51,11 @@ designed from the start for lossless round-trip.
 
 ### 5.1 Two-tier API
 
-- **`tomato`** (top-level): the high-level, ergonomic API. `parse`, `to_string`,
-  `get_string`, `set`, `insert`, `remove`. Operates on an opaque `Document` and
-  hides trivia.
-- **`tomato/ast`**: the raw AST with trivia exposed, for advanced callers that
+- **`tomlet`** (top-level): the high-level, ergonomic API. `parse`, `to_string`,
+  `parse_bytes`, typed accessors such as `get_string`, and checked edits such
+  as `set_string`, `set_int`, `remove`, and `insert_comment_before`. Operates on
+  an opaque `Document` and hides trivia.
+- **`tomlet/ast`**: the raw AST with trivia exposed, for advanced callers that
   want to write linters, formatters, or custom emitters.
 
 ### 5.2 AST shape (sketch)
@@ -84,6 +85,7 @@ pub type Value {
   // it byte-identical on round-trip. Edits regenerate the text.
   Int(value: Int, repr: String)         // "0xFF", "1_000", "42"
   Float(value: Float, repr: String)
+  SpecialFloat(value: SpecialFloat, repr: String) // inf, -inf, nan
   Bool(value: Bool)
   String(value: String, style: StringStyle)  // Basic, Literal, MultiBasic, MultiLiteral
   Date(...), Time(...), DateTime(...)
@@ -132,6 +134,7 @@ TOML editing use cases.
 ```gleam
 // Parsing / emission
 pub fn parse(input: String) -> Result(Document, ParseError)
+pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError)
 pub fn to_string(doc: Document) -> String
 
 // Typed access (consistent with `tom`)
@@ -142,13 +145,15 @@ pub fn get_float(doc, key: List(String)) -> Result(Float, GetError)
 pub fn get(doc, key: List(String)) -> Result(Value, GetError)
 
 // Editing
-pub fn set_string(doc, key: List(String), value: String) -> Document
-pub fn set_int(doc, key: List(String), value: Int) -> Document
-pub fn remove(doc, key: List(String)) -> Document
-pub fn insert_comment_before(doc, key: List(String), text: String) -> Document
+pub fn set_string(doc, key: List(String), value: String) -> Result(Document, EditError)
+pub fn set_int(doc, key: List(String), value: Int) -> Result(Document, EditError)
+pub fn remove(doc, key: List(String)) -> Result(Document, EditError)
+pub fn insert_comment_before(doc, key: List(String), text: String) -> Result(Document, EditError)
 ```
 
-All edits return a new `Document` (Gleam is immutable).
+All successful edits return a new `Document` (Gleam is immutable). Failed edits
+return `EditError` for invalid key paths, key conflicts, missing keys, and
+unsafe comment text.
 
 ## 7. Testing strategy
 
@@ -158,7 +163,7 @@ All edits return a new `Document` (Gleam is immutable).
    `to_string(parse(s)) == s`.
 3. **Edit-locality property.** Generate random documents, perform an edit at a
    random path, assert that every byte outside the edited entry is unchanged.
-4. **Unit tests** in `test/tomato_test.gleam` for the public API and edge
+4. **Unit tests** in `test/tomlet_test.gleam` for the public API and edge
    cases (CRLF, BOM, mixed string styles, deeply nested arrays of tables).
 5. **Both targets.** CI runs `gleam test --target erlang` and
    `gleam test --target javascript`.

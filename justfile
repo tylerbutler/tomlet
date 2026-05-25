@@ -1,0 +1,39 @@
+# Tomlet Gleam parser and corpus test tasks
+
+# === ALIASES ===
+alias b := build
+alias t := test
+alias f := format
+alias l := lint
+alias c := clean
+
+# Default recipe
+default:
+    @just --list
+
+# === STANDARD RECIPES ===
+
+# Compile the project
+build:
+    gleam build
+
+# Run tests
+test:
+    gleam test
+
+# Format code
+format:
+    gleam format src test
+
+# Run linter
+lint:
+    gleam format --check src test
+
+# Remove build artifacts
+clean:
+    gleam clean
+
+# Full validation workflow
+ci: format lint test build
+
+alias pr := ci
