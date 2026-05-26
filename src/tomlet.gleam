@@ -251,12 +251,12 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
   }
 }
 
-fn syntax_error_kind(expected: String) -> SyntaxErrorKind {
+fn syntax_error_kind(expected: parser.ExpectedTokenKind) -> SyntaxErrorKind {
   case expected {
-    "value" -> ExpectedValue
-    "key" -> ExpectedKey
-    "[table]" -> ExpectedTableHeader
-    _ -> InvalidToml
+    parser.ExpectedValue -> ExpectedValue
+    parser.ExpectedKey -> ExpectedKey
+    parser.ExpectedTableHeader -> ExpectedTableHeader
+    parser.ExpectedSyntax -> InvalidToml
   }
 }
 

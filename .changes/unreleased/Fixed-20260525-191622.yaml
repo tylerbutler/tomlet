@@ -1,0 +1,4 @@
+kind: Fixed
+body: |-
+    Make syntax error classification compiler-checked internally
+time: 2026-05-25T19:16:22.390000000-07:00

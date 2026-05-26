@@ -208,9 +208,9 @@ pub fn invalid_bare_value_returns_positioned_error_test() {
     == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7))
 }
 
-pub fn parser_module_uses_consistent_parse_error_names_test() {
+pub fn parser_module_uses_typed_expected_token_kind_test() {
   assert parser.parse("name = ???\n")
-    == Error(parser.Unexpected("???", "value", 7))
+    == Error(parser.Unexpected("???", parser.ExpectedValue, 7))
 }
 
 pub fn invalid_inline_array_item_returns_nested_error_test() {
@@ -231,6 +231,11 @@ pub fn malformed_table_header_returns_positioned_error_test() {
 pub fn unclosed_quoted_table_header_key_returns_error_test() {
   assert tomlet.parse("[']\n")
     == Error(tomlet.InvalidSyntax(tomlet.ExpectedKey, 1))
+}
+
+pub fn parser_specific_syntax_error_returns_invalid_toml_test() {
+  assert tomlet.parse("\u{000C}")
+    == Error(tomlet.InvalidSyntax(tomlet.InvalidToml, 0))
 }
 
 pub fn redefining_standard_table_returns_error_test() {

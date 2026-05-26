@@ -11,8 +11,15 @@ import gleam/string
 import tomlet/ast
 
 pub type ParseError {
-  Unexpected(got: String, expected: String, offset: Int)
+  Unexpected(got: String, expected: ExpectedTokenKind, offset: Int)
   KeyAlreadyInUse(key: List(String), offset: Int)
+}
+
+pub type ExpectedTokenKind {
+  ExpectedValue
+  ExpectedKey
+  ExpectedTableHeader
+  ExpectedSyntax
 }
 
 pub fn parse(input: String) -> Result(ast.Table, ParseError) {
@@ -259,7 +266,7 @@ fn parse_line(
     string_contains_disallowed_control(line)
     || string_contains_disallowed_unquoted_unicode(line)
   {
-    True -> Error(Unexpected(line, "TOML", offset))
+    True -> Error(Unexpected(line, ExpectedSyntax, offset))
     False -> {
       let trimmed_line = string.trim(line)
       let trimmed = string.trim(strip_inline_comment(line))
@@ -286,7 +293,8 @@ fn parse_line(
                     True -> parse_table_header(trimmed, offset)
                     False ->
                       case string.starts_with(trimmed, "[") {
-                        True -> Error(Unexpected(trimmed, "[table]", offset))
+                        True ->
+                          Error(Unexpected(trimmed, ExpectedTableHeader, offset))
                         False -> parse_key_value(line, offset)
                       }
                   }
@@ -335,7 +343,7 @@ fn parse_header(
           )),
         ),
       )
-    Error(Nil) -> Error(Unexpected(name, "key", offset + delimiter_width))
+    Error(Nil) -> Error(Unexpected(name, ExpectedKey, offset + delimiter_width))
   }
 }
 
@@ -365,10 +373,10 @@ fn parse_key_value(
               )
             Error(error) -> Error(error)
           }
-        Error(Nil) -> Error(Unexpected(key_text, "key", offset))
+        Error(Nil) -> Error(Unexpected(key_text, ExpectedKey, offset))
       }
     }
-    Error(Nil) -> Error(Unexpected(line, "key = value", offset))
+    Error(Nil) -> Error(Unexpected(line, ExpectedSyntax, offset))
   }
 }
 
@@ -1060,7 +1068,7 @@ fn parse_array_value(
           }
       }
     }
-    False -> Error(Unexpected(text, "array", offset))
+    False -> Error(Unexpected(text, ExpectedSyntax, offset))
   }
 }
 
@@ -1075,7 +1083,7 @@ fn parse_array_items(
         "" ->
           case rest {
             [] -> Ok([])
-            _ -> Error(Unexpected("", "value", body_offset + part_offset))
+            _ -> Error(Unexpected("", ExpectedValue, body_offset + part_offset))
           }
         clean_part ->
           case parse_value(clean_part, body_offset + part_offset) {
@@ -1107,7 +1115,7 @@ fn parse_inline_table_value(
       let clean_body = strip_inline_comments_by_line(body)
 
       case inline_table_newlines_are_valid(body) {
-        False -> Error(Unexpected(text, "inline table", offset))
+        False -> Error(Unexpected(text, ExpectedSyntax, offset))
         True ->
           case string.trim(clean_body) {
             "" -> Ok(ast.InlineTable([], text))
@@ -1125,7 +1133,7 @@ fn parse_inline_table_value(
           }
       }
     }
-    False -> Error(Unexpected(text, "inline table", offset))
+    False -> Error(Unexpected(text, ExpectedSyntax, offset))
   }
 }
 
@@ -1216,7 +1224,7 @@ fn parse_inline_entries(
     [#(part, part_offset), ..rest] -> {
       let entry_offset = body_offset + part_offset
       case string.trim(part) {
-        "" -> Error(Unexpected("", "inline table entry", entry_offset))
+        "" -> Error(Unexpected("", ExpectedSyntax, entry_offset))
         _ ->
           case split_key_value(part) {
             Ok(#(raw_key, raw_value)) ->
@@ -1225,7 +1233,7 @@ fn parse_inline_entries(
                   let key_path = key_to_strings(key)
                   case key_path_conflicts(seen, key_path) {
                     True ->
-                      Error(Unexpected(part, "inline table entry", entry_offset))
+                      Error(Unexpected(part, ExpectedSyntax, entry_offset))
                     False ->
                       case
                         parse_value(
@@ -1259,10 +1267,9 @@ fn parse_inline_entries(
                       }
                   }
                 }
-                Error(Nil) -> Error(Unexpected(part, "key", entry_offset))
+                Error(Nil) -> Error(Unexpected(part, ExpectedKey, entry_offset))
               }
-            Error(Nil) ->
-              Error(Unexpected(part, "inline table entry", entry_offset))
+            Error(Nil) -> Error(Unexpected(part, ExpectedSyntax, entry_offset))
           }
       }
     }
@@ -1644,7 +1651,7 @@ fn parse_int_value(text: String, offset: Int) -> Result(ast.Value, ParseError) {
         Ok(value) -> Ok(ast.Int(value, text))
         Error(_) -> parse_based_int_value(normalized, text, offset)
       }
-    False -> Error(Unexpected(text, "value", offset))
+    False -> Error(Unexpected(text, ExpectedValue, offset))
   }
 }
 
@@ -1667,7 +1674,7 @@ fn parse_based_int_value(
             True ->
               parse_based_int_digits(string.drop_start(normalized, 2), 2, 0)
               |> based_int_result(source_text, offset)
-            False -> Error(Unexpected(source_text, "value", offset))
+            False -> Error(Unexpected(source_text, ExpectedValue, offset))
           }
       }
   }
@@ -1680,7 +1687,7 @@ fn based_int_result(
 ) -> Result(ast.Value, ParseError) {
   case result {
     Ok(value) -> Ok(ast.Int(value, source_text))
-    Error(Nil) -> Error(Unexpected(source_text, "value", offset))
+    Error(Nil) -> Error(Unexpected(source_text, ExpectedValue, offset))
   }
 }
 
