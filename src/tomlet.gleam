@@ -34,6 +34,9 @@ type LineEnding {
 }
 
 /// Errors that can occur while parsing TOML input.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type ParseError {
   /// Raw bytes could not be decoded as valid TOML text.
   InvalidEncoding
@@ -46,6 +49,9 @@ pub type ParseError {
 }
 
 /// Stable categories for TOML syntax errors.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type SyntaxErrorKind {
   /// A TOML value was expected.
   ExpectedValue
@@ -61,6 +67,9 @@ pub type SyntaxErrorKind {
 }
 
 /// Errors that can occur while reading typed values from a document.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type GetError {
   /// No value exists at the requested key path.
   KeyNotFound(key: List(String))
@@ -70,6 +79,9 @@ pub type GetError {
 }
 
 /// A TOML value without internal formatting trivia.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type Value {
   StringValue(String)
   IntValue(Int)
@@ -86,6 +98,9 @@ pub type Value {
 }
 
 /// A TOML special floating-point value.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type SpecialFloat {
   PositiveInfinity
   NegativeInfinity
@@ -93,6 +108,9 @@ pub type SpecialFloat {
 }
 
 /// Errors that can occur while editing a document.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
 pub type EditError {
   /// Edit paths must contain at least one key segment.
   EmptyKeyPath

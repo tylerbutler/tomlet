@@ -161,6 +161,15 @@ The semver-stable public API is the top-level `tomlet` module. Other
 `tomlet/*` modules are internal implementation details and may change without
 notice.
 
+### API stability policy
+
+- The top-level `tomlet` module is the only supported API surface.
+- Modules listed in `gleam.toml` under `internal_modules` are not public API.
+- Public variant types are documented and intended to be stable, but consumers
+  should include a catch-all (`_`) match branch for forward compatibility.
+- The project follows Semantic Versioning; breaking API changes are released as
+  major versions.
+
 ## Contributing
 
 See [`DEV.md`](./DEV.md) for contributor setup, test commands, changelog

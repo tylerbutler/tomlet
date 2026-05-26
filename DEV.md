@@ -61,6 +61,14 @@ The supported public API is the top-level `tomlet` module. The modules listed in
 Avoid documenting, depending on, or expanding internal modules as public API
 unless the release intentionally changes that boundary.
 
+When reviewing API changes, preserve this contract:
+
+- Keep all user-facing additions in the top-level `tomlet` module.
+- Keep implementation modules in `internal_modules` unless intentionally
+  promoting them to public API.
+- For public variant types, document forward-compatible matching guidance
+  (include a catch-all `_` arm in examples and docs).
+
 ## Changelog entries
 
 User-facing changes should include a Changie fragment:
