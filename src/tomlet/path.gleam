@@ -26,13 +26,48 @@ fn scan_entries(
           kind: ast.ArrayOfTablesHeader,
           trivia: _,
         )) -> scan_entries(rest, key_to_strings(key), target)
-        ast.KeyValue(key: key, value: value, ..) ->
-          case list.append(active_table, key_to_strings(key)) == target {
+        ast.KeyValue(key: key, value: value, ..) -> {
+          let full_key = list.append(active_table, key_to_strings(key))
+          case full_key == target {
             True -> Ok(value)
-            False -> scan_entries(rest, active_table, target)
+            False ->
+              case value {
+                ast.InlineTable(entries, source_text: _) ->
+                  case scan_inline_entries(entries, full_key, target) {
+                    Ok(value) -> Ok(value)
+                    Error(Nil) -> scan_entries(rest, active_table, target)
+                  }
+                _ -> scan_entries(rest, active_table, target)
+              }
           }
+        }
         _ -> scan_entries(rest, active_table, target)
       }
+  }
+}
+
+fn scan_inline_entries(
+  entries: List(ast.InlineTableEntry),
+  active_path: List(String),
+  target: List(String),
+) -> Result(ast.Value, Nil) {
+  case entries {
+    [] -> Error(Nil)
+    [ast.InlineTableEntry(key: key, value: value, ..), ..rest] -> {
+      let full_key = list.append(active_path, key_to_strings(key))
+      case full_key == target {
+        True -> Ok(value)
+        False ->
+          case value {
+            ast.InlineTable(entries, source_text: _) ->
+              case scan_inline_entries(entries, full_key, target) {
+                Ok(value) -> Ok(value)
+                Error(Nil) -> scan_inline_entries(rest, active_path, target)
+              }
+            _ -> scan_inline_entries(rest, active_path, target)
+          }
+      }
+    }
   }
 }
 

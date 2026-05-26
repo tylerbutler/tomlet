@@ -47,6 +47,13 @@ Typed accessors include `get_string`, `get_int`, `get_bool`, and `get_float`.
 Other TOML values are preserved for round-tripping, but do not yet have top-level
 typed access helpers.
 
+Inline table values are addressed with the same key path syntax:
+
+```gleam
+let assert Ok(doc) = tomlet.parse("pkg = { name = \"tomato\" }\n")
+let assert Ok(name) = tomlet.get_string(doc, ["pkg", "name"])
+```
+
 Parse errors use stable variants for machine handling. `InvalidSyntax` and
 `DuplicateKey` carry byte offsets; use `tomlet.line_column(input, offset)` when
 displaying diagnostics to users.
@@ -59,6 +66,11 @@ comment text. Comment insertion rejects text containing CR or LF. New keys are
 emitted as bare TOML keys when possible and quoted when needed. Current edit
 helpers include `set_string`, `set_int`, `remove`, and
 `insert_comment_before`.
+
+`set_string` and `set_int` can replace existing values inside inline tables, such
+as `["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside
+an existing inline table are reported as `KeyConflict`; create those keys by
+rewriting the table shape explicitly rather than relying on implicit insertion.
 
 ## Examples
 

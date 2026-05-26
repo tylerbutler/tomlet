@@ -206,6 +206,89 @@ pub fn set_int_updates_existing_key_preserving_crlf_test() {
     == "name = \"tomato\"\r\nanswer = 42 # inline\r\n"
 }
 
+pub fn set_string_updates_existing_inline_table_key_test() {
+  let input = "package = { name = \"tomato\", version = \"0.1.0\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) = tomlet.set_string(doc, ["package", "name"], "carrot")
+
+  assert tomlet.get_string(updated, ["package", "name"]) == Ok("carrot")
+  assert tomlet.get_string(updated, ["package", "version"]) == Ok("0.1.0")
+  assert tomlet.to_string(updated)
+    == "package = { name = \"carrot\", version = \"0.1.0\" }\n"
+}
+
+pub fn set_int_updates_existing_nested_inline_table_key_test() {
+  let input = "package = { metadata = { downloads = 41 }, name = \"tomato\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) =
+    tomlet.set_int(doc, ["package", "metadata", "downloads"], 42)
+
+  assert tomlet.get_int(updated, ["package", "metadata", "downloads"]) == Ok(42)
+  assert tomlet.get_string(updated, ["package", "name"]) == Ok("tomato")
+  assert tomlet.to_string(updated)
+    == "package = { metadata = { downloads = 42 }, name = \"tomato\" }\n"
+}
+
+pub fn set_string_updates_deeply_nested_inline_table_key_test() {
+  let input =
+    "package = { metadata = { release = { owner = { name = \"tomato\" } } } }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) =
+    tomlet.set_string(
+      doc,
+      ["package", "metadata", "release", "owner", "name"],
+      "carrot",
+    )
+
+  assert tomlet.get_string(updated, [
+      "package",
+      "metadata",
+      "release",
+      "owner",
+      "name",
+    ])
+    == Ok("carrot")
+  assert tomlet.to_string(updated)
+    == "package = { metadata = { release = { owner = { name = \"carrot\" } } } }\n"
+}
+
+pub fn set_string_updates_inline_table_inside_standard_table_test() {
+  let input = "[package]\nmetadata = { release = { name = \"tomato\" } }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) =
+    tomlet.set_string(doc, ["package", "metadata", "release", "name"], "carrot")
+
+  assert tomlet.get_string(updated, ["package", "metadata", "release", "name"])
+    == Ok("carrot")
+  assert tomlet.to_string(updated)
+    == "[package]\nmetadata = { release = { name = \"carrot\" } }\n"
+}
+
+pub fn set_string_updates_dotted_key_inside_inline_table_test() {
+  let input = "package = { metadata.name = \"tomato\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) =
+    tomlet.set_string(doc, ["package", "metadata", "name"], "carrot")
+
+  assert tomlet.get_string(updated, ["package", "metadata", "name"])
+    == Ok("carrot")
+  assert tomlet.to_string(updated)
+    == "package = { metadata.name = \"carrot\" }\n"
+}
+
+pub fn set_string_missing_inline_table_key_returns_conflict_test() {
+  let input = "package = { name = \"tomato\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.set_string(doc, ["package", "version"], "0.1.0")
+    == Error(tomlet.KeyConflict(["package", "version"]))
+}
+
 pub fn set_string_appends_new_root_key_before_tables_test() {
   let input = "[package]\nname = \"tomato\"\n"
   let assert Ok(doc) = tomlet.parse(input)

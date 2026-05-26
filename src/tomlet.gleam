@@ -552,6 +552,29 @@ fn emit_value(value: ast.Value) -> String {
   }
 }
 
+fn emit_inline_table(entries: List(ast.InlineTableEntry)) -> String {
+  case entries {
+    [] -> "{}"
+    _ ->
+      "{ "
+      <> {
+        entries
+        |> list.map(emit_inline_table_entry)
+        |> string.join(with: ", ")
+      }
+      <> " }"
+  }
+}
+
+fn emit_inline_table_entry(entry: ast.InlineTableEntry) -> String {
+  let ast.InlineTableEntry(leading, key, value, trailing) = entry
+  emit_trivia(leading)
+  <> emit_key(key)
+  <> " = "
+  <> emit_value(value)
+  <> emit_trivia(trailing)
+}
+
 fn emit_trivia(trivia: ast.Trivia) -> String {
   let ast.Trivia(text) = trivia
   text
@@ -619,17 +642,61 @@ fn update_existing_entries(
       }
 
       case entry {
-        ast.KeyValue(leading: leading, key: key, value: _, trailing: trailing) -> {
-          case list.append(active_table, key_to_strings(key)) == target {
+        ast.KeyValue(
+          leading: leading,
+          key: key,
+          value: entry_value,
+          trailing: trailing,
+        ) -> {
+          let full_key = list.append(active_table, key_to_strings(key))
+          case full_key == target {
             True -> #(
               [ast.KeyValue(leading, key, value, trailing), ..rest],
               True,
             )
-            False -> {
-              let #(updated_rest, found) =
-                update_existing_entries(rest, next_active_table, target, value)
-              #([entry, ..updated_rest], found)
-            }
+            False ->
+              case entry_value {
+                ast.InlineTable(entries, source_text: _) -> {
+                  let #(updated_inline_entries, inline_found) =
+                    update_inline_entries(entries, full_key, target, value)
+                  case inline_found {
+                    True -> {
+                      let updated_value =
+                        ast.InlineTable(
+                          updated_inline_entries,
+                          emit_inline_table(updated_inline_entries),
+                        )
+                      #(
+                        [
+                          ast.KeyValue(leading, key, updated_value, trailing),
+                          ..rest
+                        ],
+                        True,
+                      )
+                    }
+                    False -> {
+                      let #(updated_rest, found) =
+                        update_existing_entries(
+                          rest,
+                          next_active_table,
+                          target,
+                          value,
+                        )
+                      #([entry, ..updated_rest], found)
+                    }
+                  }
+                }
+                _ -> {
+                  let #(updated_rest, found) =
+                    update_existing_entries(
+                      rest,
+                      next_active_table,
+                      target,
+                      value,
+                    )
+                  #([entry, ..updated_rest], found)
+                }
+              }
           }
         }
         _ -> {
@@ -637,6 +704,84 @@ fn update_existing_entries(
             update_existing_entries(rest, next_active_table, target, value)
           #([entry, ..updated_rest], found)
         }
+      }
+    }
+  }
+}
+
+fn update_inline_entries(
+  entries: List(ast.InlineTableEntry),
+  active_path: List(String),
+  target: List(String),
+  value: ast.Value,
+) -> #(List(ast.InlineTableEntry), Bool) {
+  case entries {
+    [] -> #([], False)
+    [
+      ast.InlineTableEntry(
+        leading: leading,
+        key: key,
+        value: entry_value,
+        trailing: trailing,
+      ),
+      ..rest
+    ] -> {
+      let full_key = list.append(active_path, key_to_strings(key))
+      case full_key == target {
+        True -> #(
+          [ast.InlineTableEntry(leading, key, value, trailing), ..rest],
+          True,
+        )
+        False ->
+          case entry_value {
+            ast.InlineTable(nested_entries, source_text: _) -> {
+              let #(updated_nested_entries, nested_found) =
+                update_inline_entries(nested_entries, full_key, target, value)
+              case nested_found {
+                True -> {
+                  let updated_value =
+                    ast.InlineTable(
+                      updated_nested_entries,
+                      emit_inline_table(updated_nested_entries),
+                    )
+                  #(
+                    [
+                      ast.InlineTableEntry(
+                        leading,
+                        key,
+                        updated_value,
+                        trailing,
+                      ),
+                      ..rest
+                    ],
+                    True,
+                  )
+                }
+                False -> {
+                  let #(updated_rest, found) =
+                    update_inline_entries(rest, active_path, target, value)
+                  #(
+                    [
+                      ast.InlineTableEntry(leading, key, entry_value, trailing),
+                      ..updated_rest
+                    ],
+                    found,
+                  )
+                }
+              }
+            }
+            _ -> {
+              let #(updated_rest, found) =
+                update_inline_entries(rest, active_path, target, value)
+              #(
+                [
+                  ast.InlineTableEntry(leading, key, entry_value, trailing),
+                  ..updated_rest
+                ],
+                found,
+              )
+            }
+          }
       }
     }
   }
