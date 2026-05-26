@@ -62,14 +62,15 @@ displaying diagnostics to users.
 
 Edit operations return `Result(Document, EditError)` so applications can tell
 successful edits from invalid paths, key conflicts, missing keys, and unsafe
-comment text. Comment insertion rejects text containing CR or LF. New keys are
-emitted as bare TOML keys when possible and quoted when needed. Current edit
-helpers include `set_string`, `set_int`, `remove`, and
+comment text. Comment insertion rejects TOML-forbidden comment control
+characters. New keys are emitted as bare TOML keys when possible and quoted when
+needed. Current edit helpers include `set_string`, `set_int`, `set_bool`,
+`set_float`, `remove`, and
 `insert_comment_before`.
 
-`set_string` and `set_int` can replace existing values inside inline tables, such
-as `["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside
-an existing inline table are reported as `KeyConflict`; create those keys by
+The `set_*` helpers can replace existing values inside inline tables, such as
+`["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside an
+existing inline table are reported as `KeyConflict`; create those keys by
 rewriting the table shape explicitly rather than relying on implicit insertion.
 
 ## Examples

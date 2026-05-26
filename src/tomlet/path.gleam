@@ -1,3 +1,8 @@
+//// Internal module -- not part of Tomlet's public API.
+////
+//// This module may change without notice. Use the top-level `tomlet` module
+//// for supported parsing, reading, editing, and writing APIs.
+
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import tomlet/ast

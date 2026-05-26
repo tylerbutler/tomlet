@@ -5,6 +5,7 @@
 //// reads and edits.
 
 import gleam/bit_array
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -117,7 +118,7 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
     False -> input
   }
 
-  case bit_array_contains(input_without_initial_bom, utf8_bom) {
+  case bit_array_contains_utf8_bom(input_without_initial_bom) {
     True -> Error(InvalidEncoding)
     False ->
       case bit_array.to_string(input_without_initial_bom) {
@@ -188,19 +189,12 @@ fn line_column_next(
   }
 }
 
-fn bit_array_contains(input: BitArray, needle: BitArray) -> Bool {
-  let input_size = bit_array.byte_size(input)
-  case input_size < bit_array.byte_size(needle) {
-    True -> False
-    False ->
-      case bit_array.starts_with(input, needle) {
-        True -> True
-        False ->
-          case bit_array.slice(input, 1, input_size - 1) {
-            Ok(rest) -> bit_array_contains(rest, needle)
-            Error(_) -> False
-          }
-      }
+fn bit_array_contains_utf8_bom(input: BitArray) -> Bool {
+  case input {
+    <<>> -> False
+    <<239, 187, 191, _rest:bits>> -> True
+    <<_, rest:bits>> -> bit_array_contains_utf8_bom(rest)
+    _ -> False
   }
 }
 
@@ -214,6 +208,7 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
   case string.contains(input_without_initial_bom, "\u{FEFF}") {
     True -> Error(InvalidEncoding)
     False -> {
+      // Parsed AST source_text is LF-only; CRLF is tracked separately on Document.
       let normalized = string.replace(input_without_initial_bom, "\r\n", "\n")
 
       case parser.parse(normalized) {
@@ -259,6 +254,7 @@ pub fn to_string(doc: Document) -> String {
       let output = emit_table(doc.root) <> doc.trailing_trivia
       case doc.line_ending {
         Lf -> output
+        // Safe because every stored source_text fragment was normalized to LF.
         Crlf -> string.replace(output, each: "\n", with: "\r\n")
       }
     }
@@ -337,6 +333,34 @@ pub fn set_int(
   set_value(doc, key, ast.Int(value, int.to_string(value)))
 }
 
+/// Set a TOML boolean value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
+pub fn set_bool(
+  doc: Document,
+  key: List(String),
+  value: Bool,
+) -> Result(Document, EditError) {
+  let repr = case value {
+    True -> "true"
+    False -> "false"
+  }
+  set_value(doc, key, ast.Bool(value, repr))
+}
+
+/// Set a TOML float value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
+pub fn set_float(
+  doc: Document,
+  key: List(String),
+  value: Float,
+) -> Result(Document, EditError) {
+  set_value(doc, key, ast.Float(value, float.to_string(value)))
+}
+
 /// Remove an existing value from a document.
 pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
   case validate_edit_key(key) {
@@ -361,7 +385,8 @@ pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
 
 /// Insert a standalone comment before an existing key.
 ///
-/// The comment text may include a leading `#`, but must not contain CR or LF.
+/// The comment text may include a leading `#`, but must not contain TOML
+/// comment control characters.
 pub fn insert_comment_before(
   doc: Document,
   key: List(String),
@@ -1005,9 +1030,23 @@ fn validate_key_segments(key: List(String)) -> Result(Nil, EditError) {
 }
 
 fn validate_comment_text(text: String) -> Result(Nil, EditError) {
-  case string.contains(text, "\n") || string.contains(text, "\r") {
-    True -> Error(InvalidCommentText)
-    False -> Ok(Nil)
+  text
+  |> string.to_utf_codepoints
+  |> validate_comment_codepoints
+}
+
+fn validate_comment_codepoints(
+  codepoints: List(UtfCodepoint),
+) -> Result(Nil, EditError) {
+  case codepoints {
+    [] -> Ok(Nil)
+    [codepoint, ..rest] -> {
+      let value = string.utf_codepoint_to_int(codepoint)
+      case { value <= 8 } || { value >= 10 && value <= 31 } || value == 127 {
+        True -> Error(InvalidCommentText)
+        False -> validate_comment_codepoints(rest)
+      }
+    }
   }
 }
 

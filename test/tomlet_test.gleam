@@ -88,6 +88,31 @@ pub fn parse_bytes_rejects_bom_not_at_start_test() {
     == Error(tomlet.InvalidEncoding)
 }
 
+pub fn parse_bytes_rejects_bom_at_end_test() {
+  assert tomlet.parse_bytes(<<
+      110,
+      97,
+      109,
+      101,
+      32,
+      61,
+      32,
+      34,
+      116,
+      111,
+      109,
+      97,
+      116,
+      111,
+      34,
+      10,
+      239,
+      187,
+      191,
+    >>)
+    == Error(tomlet.InvalidEncoding)
+}
+
 pub fn round_trip_basic_scalars_test() {
   let input = "name = \"tomato\"\nanswer = 42\nenabled = true\nratio = 3.14\n"
   let assert Ok(doc) = tomlet.parse(input)
@@ -204,6 +229,50 @@ pub fn set_int_updates_existing_key_preserving_crlf_test() {
   assert tomlet.get_int(updated, ["answer"]) == Ok(42)
   assert tomlet.to_string(updated)
     == "name = \"tomato\"\r\nanswer = 42 # inline\r\n"
+}
+
+pub fn set_bool_updates_existing_key_preserving_trivia_test() {
+  let input = "enabled = false # inline\nname = \"tomato\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) = tomlet.set_bool(doc, ["enabled"], True)
+
+  assert tomlet.get_bool(updated, ["enabled"]) == Ok(True)
+  assert tomlet.to_string(updated)
+    == "enabled = true # inline\nname = \"tomato\"\n"
+}
+
+pub fn set_float_appends_new_key_to_existing_table_test() {
+  let input = "[package]\nname = \"tomato\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) = tomlet.set_float(doc, ["package", "ratio"], 2.5)
+
+  assert tomlet.get_float(updated, ["package", "ratio"]) == Ok(2.5)
+  assert tomlet.to_string(updated)
+    == "[package]\nname = \"tomato\"\nratio = 2.5\n"
+}
+
+pub fn set_bool_updates_existing_inline_table_key_test() {
+  let input = "package = { enabled = false, name = \"tomato\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) = tomlet.set_bool(doc, ["package", "enabled"], True)
+
+  assert tomlet.get_bool(updated, ["package", "enabled"]) == Ok(True)
+  assert tomlet.to_string(updated)
+    == "package = { enabled = true, name = \"tomato\" }\n"
+}
+
+pub fn set_float_updates_existing_key_preserving_crlf_test() {
+  let input = "ratio = 1.5 # inline\r\nname = \"tomato\"\r\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let assert Ok(updated) = tomlet.set_float(doc, ["ratio"], 2.5)
+
+  assert tomlet.get_float(updated, ["ratio"]) == Ok(2.5)
+  assert tomlet.to_string(updated)
+    == "ratio = 2.5 # inline\r\nname = \"tomato\"\r\n"
 }
 
 pub fn set_string_updates_existing_inline_table_key_test() {
@@ -398,6 +467,8 @@ pub fn remove_preserves_crlf_line_endings_test() {
 pub fn edit_apis_reject_empty_key_path_test() {
   assert tomlet.set_string(tomlet.new(), [], "tomato")
     == Error(tomlet.EmptyKeyPath)
+  assert tomlet.set_bool(tomlet.new(), [], True) == Error(tomlet.EmptyKeyPath)
+  assert tomlet.set_float(tomlet.new(), [], 1.5) == Error(tomlet.EmptyKeyPath)
   assert tomlet.remove(tomlet.new(), []) == Error(tomlet.EmptyKeyPath)
 }
 
@@ -411,6 +482,35 @@ pub fn insert_comment_before_rejects_multiline_comment_text_test() {
 
   assert tomlet.insert_comment_before(doc, ["name"], "safe\ninjected = true")
     == Error(tomlet.InvalidCommentText)
+}
+
+pub fn insert_comment_before_rejects_forbidden_control_characters_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  assert tomlet.insert_comment_before(doc, ["name"], "\u{0000}danger")
+    == Error(tomlet.InvalidCommentText)
+  assert tomlet.insert_comment_before(doc, ["name"], "\u{001f}danger")
+    == Error(tomlet.InvalidCommentText)
+  assert tomlet.insert_comment_before(doc, ["name"], "\u{007f}danger")
+    == Error(tomlet.InvalidCommentText)
+}
+
+pub fn insert_comment_before_allows_tab_in_comment_text_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  let assert Ok(updated) =
+    tomlet.insert_comment_before(doc, ["name"], "safe\tcomment")
+
+  assert tomlet.to_string(updated) == "# safe\tcomment\nname = \"tomato\"\n"
+}
+
+pub fn insert_comment_before_allows_printable_unicode_comment_text_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  let assert Ok(updated) =
+    tomlet.insert_comment_before(doc, ["name"], "safe tomato 🍅")
+
+  assert tomlet.to_string(updated) == "# safe tomato 🍅\nname = \"tomato\"\n"
 }
 
 pub fn set_string_quotes_non_bare_key_segments_test() {
