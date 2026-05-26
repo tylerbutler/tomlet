@@ -49,8 +49,14 @@ changelog-preview:
 changelog:
     changie merge
 
+# === DOCUMENTATION ===
+
+# Build generated documentation
+docs:
+    gleam docs build
+
 # Full validation workflow
-ci: format lint test build
+ci: format lint test build docs
 
 alias pr := ci
 alias cl := change
