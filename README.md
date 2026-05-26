@@ -150,10 +150,14 @@ case tomlet.parse(input) {
   Ok(_) -> Nil
   Error(tomlet.InvalidSyntax(_, offset)) -> {
     let position = tomlet.line_column(input, offset)
+    let line = tomlet.position_line(position)
+    let column = tomlet.position_column(position)
     // Show line and column in your application's diagnostic.
   }
   Error(tomlet.DuplicateKey(_, offset)) -> {
     let position = tomlet.line_column(input, offset)
+    let line = tomlet.position_line(position)
+    let column = tomlet.position_column(position)
     // Show line and column in your application's diagnostic.
   }
   Error(tomlet.InvalidEncoding) -> Nil
@@ -170,8 +174,8 @@ notice.
 
 - The top-level `tomlet` module is the only supported API surface.
 - Modules listed in `gleam.toml` under `internal_modules` are not public API.
-- Public variant types are documented and intended to be stable, but consumers
-  should include a catch-all (`_`) match branch for forward compatibility.
+- Public variant types are stable and matchable. Adding, removing, or renaming
+  variants is treated as a breaking change.
 - The project follows Semantic Versioning; breaking API changes are released as
   major versions.
 

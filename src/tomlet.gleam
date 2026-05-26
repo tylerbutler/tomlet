@@ -35,8 +35,8 @@ type LineEnding {
 
 /// Errors that can occur while parsing TOML input.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type ParseError {
   /// Raw bytes could not be decoded as valid TOML text.
   InvalidEncoding
@@ -50,8 +50,8 @@ pub type ParseError {
 
 /// Stable categories for TOML syntax errors.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type SyntaxErrorKind {
   /// A TOML value was expected.
   ExpectedValue
@@ -64,15 +64,14 @@ pub type SyntaxErrorKind {
 
   /// TOML syntax was invalid, but the parser does not expose a narrower stable category.
   ///
-  /// Future releases may classify some of these errors under new, more specific
-  /// variants. Match with a catch-all (`_`) branch to remain forward compatible.
+  /// This catches syntax errors that do not have a narrower stable category.
   InvalidToml
 }
 
 /// Errors that can occur while reading typed values from a document.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type GetError {
   /// No value exists at the requested key path.
   KeyNotFound(key: List(String))
@@ -83,8 +82,8 @@ pub type GetError {
 
 /// A TOML value without internal formatting trivia.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 ///
 /// The table-shaped variants (`InlineTableValue`, `TableValue`,
 /// `ArrayOfTablesValue`) expose their entries as an ordered association list of
@@ -135,8 +134,8 @@ pub opaque type DateTime {
 
 /// Errors that can occur while constructing typed values from raw text.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type FormatError {
   /// The text is not a valid TOML local date literal (`YYYY-MM-DD`).
   InvalidDate(text: String)
@@ -149,6 +148,13 @@ pub type FormatError {
 }
 
 /// Construct a `Date` from its TOML lexical form (e.g. `"1979-05-27"`).
+///
+/// ```gleam
+/// let assert Ok(date) = tomlet.date_from_string("1979-05-27")
+/// let assert Ok(doc) = tomlet.set_date(tomlet.new(), ["released"], date)
+/// tomlet.to_string(doc)
+/// // -> "released = 1979-05-27\n"
+/// ```
 pub fn date_from_string(text: String) -> Result(Date, FormatError) {
   case parser.date_repr_is_valid(text) {
     True -> Ok(Date(text))
@@ -157,6 +163,13 @@ pub fn date_from_string(text: String) -> Result(Date, FormatError) {
 }
 
 /// Construct a `Time` from its TOML lexical form (e.g. `"07:32:00"`).
+///
+/// ```gleam
+/// let assert Ok(time) = tomlet.time_from_string("07:32:00")
+/// let assert Ok(doc) = tomlet.set_time(tomlet.new(), ["alarm"], time)
+/// tomlet.to_string(doc)
+/// // -> "alarm = 07:32:00\n"
+/// ```
 pub fn time_from_string(text: String) -> Result(Time, FormatError) {
   case parser.time_repr_is_valid(text) {
     True -> Ok(Time(text))
@@ -166,6 +179,15 @@ pub fn time_from_string(text: String) -> Result(Time, FormatError) {
 
 /// Construct a `DateTime` from its TOML lexical form
 /// (e.g. `"1979-05-27T07:32:00Z"`).
+///
+/// ```gleam
+/// let assert Ok(datetime) =
+///   tomlet.datetime_from_string("1979-05-27T07:32:00Z")
+/// let assert Ok(doc) =
+///   tomlet.set_datetime(tomlet.new(), ["published"], datetime)
+/// tomlet.to_string(doc)
+/// // -> "published = 1979-05-27T07:32:00Z\n"
+/// ```
 pub fn datetime_from_string(text: String) -> Result(DateTime, FormatError) {
   case parser.datetime_repr_is_valid(text) {
     True -> Ok(DateTime(text))
@@ -190,8 +212,14 @@ pub fn datetime_to_string(datetime: DateTime) -> String {
 
 /// A TOML special floating-point value.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
+///
+/// ```gleam
+/// let assert Ok(doc) = tomlet.parse("limit = inf\n")
+/// let assert Ok(tomlet.SpecialFloatValue(tomlet.PositiveInfinity)) =
+///   tomlet.get(doc, ["limit"])
+/// ```
 pub type SpecialFloat {
   PositiveInfinity
   NegativeInfinity
@@ -200,8 +228,8 @@ pub type SpecialFloat {
 
 /// Errors that can occur while editing a document.
 ///
-/// For forward compatibility, prefer a catch-all (`_`) branch when matching
-/// this type so your code can tolerate future variants.
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type EditError {
   /// Edit paths must contain at least one key segment.
   EmptyKeyPath
@@ -242,7 +270,12 @@ pub fn new() -> Document {
   )
 }
 
-/// Parse TOML text into a document.
+/// Parse TOML 1.0 text into a document.
+///
+/// Successful parses return an opaque `Document` that preserves comments,
+/// formatting trivia, key order, and the original line ending style for
+/// round-tripping. Invalid text returns `ParseError`, including byte offsets for
+/// syntax and duplicate-key diagnostics.
 pub fn parse(input: String) -> Result(Document, ParseError) {
   parse_string(input)
 }
@@ -251,6 +284,14 @@ pub fn parse(input: String) -> Result(Document, ParseError) {
 ///
 /// This validates UTF-8 input and accepts a UTF-8 byte order mark only at the
 /// start of the input.
+///
+/// ```gleam
+/// let assert Ok(doc) = tomlet.parse_bytes(<<"answer = 42\n":utf8>>)
+/// let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
+///
+/// tomlet.parse_bytes(<<110, 97, 109, 101, 32, 61, 32, 255, 10>>)
+/// // -> Error(tomlet.InvalidEncoding)
+/// ```
 pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
   let utf8_bom = <<239, 187, 191>>
   let input_without_initial_bom = case bit_array.starts_with(input, utf8_bom) {
@@ -273,7 +314,11 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
 }
 
 /// A one-based source position.
-pub type Position {
+///
+/// Positions are opaque so Tomlet can add more source-location details later
+/// without changing the public constructor shape. Use `position_line` and
+/// `position_column` to inspect one.
+pub opaque type Position {
   Position(line: Int, column: Int)
 }
 
@@ -281,10 +326,33 @@ pub type Position {
 ///
 /// Offsets beyond the end of the input return the position just after the last
 /// character. CRLF is treated as a single line break.
+///
+/// ```gleam
+/// let input = "name = \n"
+/// case tomlet.parse(input) {
+///   Error(tomlet.InvalidSyntax(_, offset)) -> {
+///     let position = tomlet.line_column(input, offset)
+///     let line = tomlet.position_line(position)
+///     let column = tomlet.position_column(position)
+///     // Show line and column in your application's diagnostic.
+///   }
+///   _ -> Nil
+/// }
+/// ```
 pub fn line_column(input: String, offset: Int) -> Position {
   let #(line, column) =
     line_column_loop(string.to_utf_codepoints(input), offset, 0, 1, 1)
   Position(line: line, column: column)
+}
+
+/// Return the one-based line number for a source position.
+pub fn position_line(position: Position) -> Int {
+  position.line
+}
+
+/// Return the one-based column number for a source position.
+pub fn position_column(position: Position) -> Int {
+  position.column
 }
 
 fn line_column_loop(
@@ -413,6 +481,19 @@ pub fn to_string(doc: Document) -> String {
 }
 
 /// Read a TOML value at a key path.
+///
+/// Use `get` instead of the typed `get_*` helpers when you need to inspect
+/// arrays, inline tables, standard tables, arrays of tables, or special floats.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.parse("package = { name = \"tomato\", downloads = 42 }\n")
+/// let assert Ok(value) = tomlet.get(doc, ["package"])
+/// // -> tomlet.InlineTableValue([
+/// //   #(["name"], tomlet.StringValue("tomato")),
+/// //   #(["downloads"], tomlet.IntValue(42)),
+/// // ])
+/// ```
 pub fn get(doc: Document, key: List(String)) -> Result(Value, GetError) {
   case get_value(doc, key) {
     Ok(value) -> Ok(public_value(value))
@@ -625,6 +706,16 @@ fn drop_prefix(values: List(String), prefix: List(String)) -> List(String) {
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
 /// table header when needed.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.set_string(tomlet.new(), ["package", "name"], "tomlet")
+/// tomlet.to_string(doc)
+/// // -> "
+/// // [package]
+/// // name = \"tomlet\"
+/// // "
+/// ```
 pub fn set_string(
   doc: Document,
   key: List(String),
@@ -718,6 +809,16 @@ pub fn set_datetime(
 /// Items are emitted in order using a default flow-style representation
 /// (`[a, b, c]`). Existing values are replaced in place. Missing keys are
 /// inserted, creating a table header when needed.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.set_array(tomlet.new(), ["ports"], [
+///     tomlet.IntValue(8000),
+///     tomlet.IntValue(8001),
+///   ])
+/// tomlet.to_string(doc)
+/// // -> "ports = [8000, 8001]\n"
+/// ```
 pub fn set_array(
   doc: Document,
   key: List(String),
@@ -733,6 +834,16 @@ pub fn set_array(
 /// (`{ a = 1, b = 2 }`). Each entry's key path is rendered as a dotted key
 /// when it contains more than one segment. Existing values are replaced in
 /// place. Missing keys are inserted, creating a table header when needed.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.set_inline_table(tomlet.new(), ["pkg"], [
+///     #(["name"], tomlet.StringValue("tomato")),
+///     #(["meta", "downloads"], tomlet.IntValue(42)),
+///   ])
+/// tomlet.to_string(doc)
+/// // -> "pkg = { name = \"tomato\", meta.downloads = 42 }\n"
+/// ```
 pub fn set_inline_table(
   doc: Document,
   key: List(String),
@@ -756,6 +867,18 @@ pub fn set_inline_table(
 /// A `[[key]]` header is appended to the document followed by the supplied
 /// entries. Works whether or not an array of tables already exists at the key
 /// path; if no array of tables exists yet, a new one is created.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.append_array_of_tables(tomlet.new(), ["packages"], [
+///     #(["name"], tomlet.StringValue("tomato")),
+///   ])
+/// tomlet.to_string(doc)
+/// // -> "
+/// // [[packages]]
+/// // name = \"tomato\"
+/// // "
+/// ```
 pub fn append_array_of_tables(
   doc: Document,
   key: List(String),
@@ -968,6 +1091,9 @@ fn array_of_tables_key_conflicts(
 }
 
 /// Remove an existing value from a document.
+///
+/// Returns `MissingEditKey` when the key path does not exist, and
+/// `EmptyKeyPath` when the key path is empty.
 pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
   case validate_edit_key(key) {
     Error(error) -> Error(error)
@@ -992,7 +1118,20 @@ pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
 /// Insert a standalone comment before an existing key.
 ///
 /// The comment text may include a leading `#`, but must not contain TOML
-/// comment control characters.
+/// comment control characters. Returns `MissingEditKey` when the target key
+/// does not exist, `InvalidCommentText` when the comment is unsafe to emit, and
+/// `EmptyKeyPath` when the key path is empty.
+///
+/// ```gleam
+/// let assert Ok(doc) = tomlet.parse("released = 1979-05-27\n")
+/// let assert Ok(doc) =
+///   tomlet.insert_comment_before(doc, ["released"], "release date")
+/// tomlet.to_string(doc)
+/// // -> "
+/// // # release date
+/// // released = 1979-05-27
+/// // "
+/// ```
 pub fn insert_comment_before(
   doc: Document,
   key: List(String),

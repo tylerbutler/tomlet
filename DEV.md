@@ -66,8 +66,8 @@ When reviewing API changes, preserve this contract:
 - Keep all user-facing additions in the top-level `tomlet` module.
 - Keep implementation modules in `internal_modules` unless intentionally
   promoting them to public API.
-- For public variant types, document forward-compatible matching guidance
-  (include a catch-all `_` arm in examples and docs).
+- Public variant types are stable and matchable. Adding, removing, or renaming
+  variants is treated as a breaking change.
 
 ## Changelog entries
 

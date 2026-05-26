@@ -162,22 +162,29 @@ pub fn crlf_input_is_accepted_test() {
 }
 
 pub fn line_column_returns_one_based_location_test() {
-  assert tomlet.line_column("name = 1\nbad = ???\n", 9)
-    == tomlet.Position(line: 2, column: 1)
-  assert tomlet.line_column("name = 1\nbad = ???\n", 15)
-    == tomlet.Position(line: 2, column: 7)
+  let start = tomlet.line_column("name = 1\nbad = ???\n", 9)
+  assert tomlet.position_line(start) == 2
+  assert tomlet.position_column(start) == 1
+
+  let question_marks = tomlet.line_column("name = 1\nbad = ???\n", 15)
+  assert tomlet.position_line(question_marks) == 2
+  assert tomlet.position_column(question_marks) == 7
 }
 
 pub fn line_column_handles_crlf_input_test() {
-  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 10)
-    == tomlet.Position(line: 2, column: 1)
-  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 16)
-    == tomlet.Position(line: 2, column: 7)
+  let start = tomlet.line_column("name = 1\r\nbad = ???\r\n", 10)
+  assert tomlet.position_line(start) == 2
+  assert tomlet.position_column(start) == 1
+
+  let question_marks = tomlet.line_column("name = 1\r\nbad = ???\r\n", 16)
+  assert tomlet.position_line(question_marks) == 2
+  assert tomlet.position_column(question_marks) == 7
 }
 
 pub fn line_column_clamps_offsets_past_end_test() {
-  assert tomlet.line_column("name = 1\n", 999)
-    == tomlet.Position(line: 2, column: 1)
+  let position = tomlet.line_column("name = 1\n", 999)
+  assert tomlet.position_line(position) == 2
+  assert tomlet.position_column(position) == 1
 }
 
 pub fn parse_multiline_basic_string_test() {
