@@ -25,6 +25,114 @@ pub fn parse_basic_int_and_get_it_test() {
     == Error(tomlet.WrongType(["answer"], "String"))
 }
 
+pub fn get_returns_public_scalar_values_test() {
+  let input =
+    "name = \"tomato\"\n"
+    <> "answer = 42\n"
+    <> "enabled = true\n"
+    <> "ratio = 3.14\n"
+    <> "positive = inf\n"
+    <> "negative = -inf\n"
+    <> "nan_value = nan\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["name"]) == Ok(tomlet.StringValue("tomato"))
+  assert tomlet.get(doc, ["answer"]) == Ok(tomlet.IntValue(42))
+  assert tomlet.get(doc, ["enabled"]) == Ok(tomlet.BoolValue(True))
+  assert tomlet.get(doc, ["ratio"]) == Ok(tomlet.FloatValue(3.14))
+  assert tomlet.get(doc, ["positive"])
+    == Ok(tomlet.SpecialFloatValue(tomlet.PositiveInfinity))
+  assert tomlet.get(doc, ["negative"])
+    == Ok(tomlet.SpecialFloatValue(tomlet.NegativeInfinity))
+  assert tomlet.get(doc, ["nan_value"])
+    == Ok(tomlet.SpecialFloatValue(tomlet.NotANumber))
+}
+
+pub fn get_returns_key_not_found_for_missing_value_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  assert tomlet.get(doc, ["missing"]) == Error(tomlet.KeyNotFound(["missing"]))
+}
+
+pub fn get_returns_public_date_time_and_array_values_test() {
+  let input =
+    "local_date = 1979-05-27\n"
+    <> "local_time = 07:32:00\n"
+    <> "timestamp = 1979-05-27T07:32:00Z\n"
+    <> "ports = [8000, 8001, 8002]\n"
+    <> "matrix = [[1, 2], [3, 4]]\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["local_date"]) == Ok(tomlet.DateValue("1979-05-27"))
+  assert tomlet.get(doc, ["local_time"]) == Ok(tomlet.TimeValue("07:32:00"))
+  assert tomlet.get(doc, ["timestamp"])
+    == Ok(tomlet.DateTimeValue("1979-05-27T07:32:00Z"))
+  assert tomlet.get(doc, ["ports"])
+    == Ok(
+      tomlet.ArrayValue([
+        tomlet.IntValue(8000),
+        tomlet.IntValue(8001),
+        tomlet.IntValue(8002),
+      ]),
+    )
+  assert tomlet.get(doc, ["matrix"])
+    == Ok(
+      tomlet.ArrayValue([
+        tomlet.ArrayValue([tomlet.IntValue(1), tomlet.IntValue(2)]),
+        tomlet.ArrayValue([tomlet.IntValue(3), tomlet.IntValue(4)]),
+      ]),
+    )
+}
+
+pub fn get_returns_public_inline_table_values_test() {
+  let input =
+    "package = { name = \"tomato\", metadata = { downloads = 42 }, tags = [\"config\"] }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["package"])
+    == Ok(
+      tomlet.InlineTableValue([
+        #(["name"], tomlet.StringValue("tomato")),
+        #(
+          ["metadata"],
+          tomlet.InlineTableValue([
+            #(["downloads"], tomlet.IntValue(42)),
+          ]),
+        ),
+        #(["tags"], tomlet.ArrayValue([tomlet.StringValue("config")])),
+      ]),
+    )
+  assert tomlet.get(doc, ["package", "metadata", "downloads"])
+    == Ok(tomlet.IntValue(42))
+}
+
+pub fn get_returns_public_array_of_tables_values_test() {
+  let input =
+    "[[packages]]\nname = \"tomato\"\n\n[[packages]]\nname = \"carrot\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["packages"])
+    == Ok(
+      tomlet.ArrayOfTablesValue([
+        [#(["name"], tomlet.StringValue("tomato"))],
+        [#(["name"], tomlet.StringValue("carrot"))],
+      ]),
+    )
+}
+
+pub fn get_returns_public_standard_table_values_test() {
+  let input = "[package]\nname = \"tomato\"\nversion = \"0.1.0\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["package"])
+    == Ok(
+      tomlet.TableValue([
+        #(["name"], tomlet.StringValue("tomato")),
+        #(["version"], tomlet.StringValue("0.1.0")),
+      ]),
+    )
+}
+
 pub fn parse_bytes_accepts_valid_utf8_with_bom_test() {
   let assert Ok(doc) =
     tomlet.parse_bytes(<<

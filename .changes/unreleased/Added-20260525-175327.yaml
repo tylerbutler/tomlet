@@ -1,0 +1,4 @@
+kind: Added
+body: |-
+    Add a public `tomlet.get` API for reading any TOML value through `tomlet.Value`
+time: 2026-05-25T17:53:27.488000000-07:00

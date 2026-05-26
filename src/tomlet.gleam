@@ -69,6 +69,29 @@ pub type GetError {
   WrongType(key: List(String), expected: String)
 }
 
+/// A TOML value without internal formatting trivia.
+pub type Value {
+  StringValue(String)
+  IntValue(Int)
+  FloatValue(Float)
+  SpecialFloatValue(SpecialFloat)
+  BoolValue(Bool)
+  DateValue(String)
+  TimeValue(String)
+  DateTimeValue(String)
+  ArrayValue(List(Value))
+  InlineTableValue(List(#(List(String), Value)))
+  TableValue(List(#(List(String), Value)))
+  ArrayOfTablesValue(List(List(#(List(String), Value))))
+}
+
+/// A TOML special floating-point value.
+pub type SpecialFloat {
+  PositiveInfinity
+  NegativeInfinity
+  NotANumber
+}
+
 /// Errors that can occur while editing a document.
 pub type EditError {
   /// Edit paths must contain at least one key segment.
@@ -261,6 +284,14 @@ pub fn to_string(doc: Document) -> String {
   }
 }
 
+/// Read a TOML value at a key path.
+pub fn get(doc: Document, key: List(String)) -> Result(Value, GetError) {
+  case get_value(doc, key) {
+    Ok(value) -> Ok(public_value(value))
+    Error(_) -> get_table_value(doc, key)
+  }
+}
+
 /// Read a TOML string value at a key path.
 pub fn get_string(
   doc: Document,
@@ -303,6 +334,133 @@ pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
 fn get_value(doc: Document, key: List(String)) -> Result(ast.Value, GetError) {
   path.get(doc.root, key)
   |> result.map_error(fn(_) { KeyNotFound(key) })
+}
+
+fn get_table_value(
+  doc: Document,
+  key: List(String),
+) -> Result(Value, GetError) {
+  case key {
+    [] -> Error(KeyNotFound(key))
+    _ -> {
+      let Document(root: ast.Table(entries: entries, ..), ..) = doc
+      let #(table_entries, found) =
+        collect_table_entries(entries, [], key, False, [])
+      case found {
+        True -> Ok(TableValue(table_entries))
+        False -> Error(KeyNotFound(key))
+      }
+    }
+  }
+}
+
+fn public_value(value: ast.Value) -> Value {
+  case value {
+    ast.Int(value, source_text: _) -> IntValue(value)
+    ast.Float(value, source_text: _) -> FloatValue(value)
+    ast.SpecialFloat(value, source_text: _) ->
+      SpecialFloatValue(public_special_float(value))
+    ast.Bool(value, source_text: _) -> BoolValue(value)
+    ast.String(value, style: _, source_text: _) -> StringValue(value)
+    ast.Date(source_text) -> DateValue(source_text)
+    ast.Time(source_text) -> TimeValue(source_text)
+    ast.DateTime(source_text) -> DateTimeValue(source_text)
+    ast.Array(items, source_text: _) ->
+      ArrayValue(list.map(items, public_array_item))
+    ast.InlineTable(entries, source_text: _) ->
+      InlineTableValue(list.map(entries, public_inline_table_entry))
+    ast.ArrayOfTables(items) ->
+      ArrayOfTablesValue(list.map(items, public_table_entries))
+  }
+}
+
+fn public_special_float(value: ast.SpecialFloat) -> SpecialFloat {
+  case value {
+    ast.PositiveInfinity -> PositiveInfinity
+    ast.NegativeInfinity -> NegativeInfinity
+    ast.NotANumber -> NotANumber
+  }
+}
+
+fn public_array_item(item: ast.ArrayItem) -> Value {
+  let ast.ArrayItem(leading: _, value: value, trailing: _) = item
+  public_value(value)
+}
+
+fn public_inline_table_entry(
+  entry: ast.InlineTableEntry,
+) -> #(List(String), Value) {
+  let ast.InlineTableEntry(leading: _, key: key, value: value, trailing: _) =
+    entry
+  #(key_to_strings(key), public_value(value))
+}
+
+fn public_table_entries(table: ast.Table) -> List(#(List(String), Value)) {
+  let ast.Table(entries: entries, header: _) = table
+  let #(table_entries, _) = collect_table_entries(entries, [], [], True, [])
+  table_entries
+}
+
+fn collect_table_entries(
+  entries: List(ast.Entry),
+  active_table: List(String),
+  target: List(String),
+  found: Bool,
+  collected: List(#(List(String), Value)),
+) -> #(List(#(List(String), Value)), Bool) {
+  case entries {
+    [] -> #(list.reverse(collected), found)
+    [entry, ..rest] -> {
+      let next_active_table = case entry {
+        ast.TableHeader(header) -> header_key(header)
+        _ -> active_table
+      }
+      let next_found = case entry {
+        ast.TableHeader(header) ->
+          found
+          || {
+            header_is_standard_table(header) && header_key(header) == target
+          }
+        _ -> found
+      }
+      case entry {
+        ast.KeyValue(key: key, value: value, ..) -> {
+          let full_key = list.append(active_table, key_to_strings(key))
+          case list_starts_with(full_key, target) && full_key != target {
+            True ->
+              collect_table_entries(rest, next_active_table, target, True, [
+                #(drop_prefix(full_key, target), public_value(value)),
+                ..collected
+              ])
+            False ->
+              collect_table_entries(
+                rest,
+                next_active_table,
+                target,
+                next_found,
+                collected,
+              )
+          }
+        }
+        _ ->
+          collect_table_entries(
+            rest,
+            next_active_table,
+            target,
+            next_found,
+            collected,
+          )
+      }
+    }
+  }
+}
+
+fn drop_prefix(values: List(String), prefix: List(String)) -> List(String) {
+  case values, prefix {
+    rest, [] -> rest
+    [_, ..rest], [_, ..prefix_rest] -> drop_prefix(rest, prefix_rest)
+    _, _ -> []
+  }
 }
 
 /// Set a TOML string value at a key path.

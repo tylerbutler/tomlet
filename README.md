@@ -44,8 +44,14 @@ let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
 ```
 
 Typed accessors include `get_string`, `get_int`, `get_bool`, and `get_float`.
-Other TOML values are preserved for round-tripping, but do not yet have top-level
-typed access helpers.
+Use `get` when you need to inspect any TOML value through the public
+`tomlet.Value` type, including dates, times, arrays, inline tables, standard
+tables, and arrays of tables.
+
+```gleam
+let assert Ok(doc) = tomlet.parse("released = 2026-05-25\n")
+let assert Ok(tomlet.DateValue(date)) = tomlet.get(doc, ["released"])
+```
 
 Inline table values are addressed with the same key path syntax:
 
