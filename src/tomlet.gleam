@@ -133,6 +133,46 @@ pub opaque type DateTime {
   DateTime(text: String)
 }
 
+/// Errors that can occur while constructing typed values from raw text.
+///
+/// For forward compatibility, prefer a catch-all (`_`) branch when matching
+/// this type so your code can tolerate future variants.
+pub type FormatError {
+  /// The text is not a valid TOML local date literal (`YYYY-MM-DD`).
+  InvalidDate(text: String)
+
+  /// The text is not a valid TOML local time literal (`HH:MM:SS[.fraction]`).
+  InvalidTime(text: String)
+
+  /// The text is not a valid TOML date-time literal.
+  InvalidDateTime(text: String)
+}
+
+/// Construct a `Date` from its TOML lexical form (e.g. `"1979-05-27"`).
+pub fn date_from_string(text: String) -> Result(Date, FormatError) {
+  case parser.date_repr_is_valid(text) {
+    True -> Ok(Date(text))
+    False -> Error(InvalidDate(text))
+  }
+}
+
+/// Construct a `Time` from its TOML lexical form (e.g. `"07:32:00"`).
+pub fn time_from_string(text: String) -> Result(Time, FormatError) {
+  case parser.time_repr_is_valid(text) {
+    True -> Ok(Time(text))
+    False -> Error(InvalidTime(text))
+  }
+}
+
+/// Construct a `DateTime` from its TOML lexical form
+/// (e.g. `"1979-05-27T07:32:00Z"`).
+pub fn datetime_from_string(text: String) -> Result(DateTime, FormatError) {
+  case parser.datetime_repr_is_valid(text) {
+    True -> Ok(DateTime(text))
+    False -> Error(InvalidDateTime(text))
+  }
+}
+
 /// Return the original lexical form of a TOML date value.
 pub fn date_to_string(date: Date) -> String {
   date.text
@@ -419,6 +459,36 @@ pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
   }
 }
 
+/// Read a TOML local date value at a key path.
+pub fn get_date(doc: Document, key: List(String)) -> Result(Date, GetError) {
+  case get_value(doc, key) {
+    Ok(ast.Date(source_text)) -> Ok(Date(source_text))
+    Ok(_) -> Error(WrongType(key, "Date"))
+    Error(error) -> Error(error)
+  }
+}
+
+/// Read a TOML local time value at a key path.
+pub fn get_time(doc: Document, key: List(String)) -> Result(Time, GetError) {
+  case get_value(doc, key) {
+    Ok(ast.Time(source_text)) -> Ok(Time(source_text))
+    Ok(_) -> Error(WrongType(key, "Time"))
+    Error(error) -> Error(error)
+  }
+}
+
+/// Read a TOML date-time value at a key path.
+pub fn get_datetime(
+  doc: Document,
+  key: List(String),
+) -> Result(DateTime, GetError) {
+  case get_value(doc, key) {
+    Ok(ast.DateTime(source_text)) -> Ok(DateTime(source_text))
+    Ok(_) -> Error(WrongType(key, "DateTime"))
+    Error(error) -> Error(error)
+  }
+}
+
 fn get_value(doc: Document, key: List(String)) -> Result(ast.Value, GetError) {
   path.get(doc.root, key)
   |> result.map_error(fn(_) { KeyNotFound(key) })
@@ -605,6 +675,296 @@ pub fn set_float(
   value: Float,
 ) -> Result(Document, EditError) {
   set_value(doc, key, ast.Float(value, float.to_string(value)))
+}
+
+/// Set a TOML local date value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
+pub fn set_date(
+  doc: Document,
+  key: List(String),
+  value: Date,
+) -> Result(Document, EditError) {
+  set_value(doc, key, ast.Date(value.text))
+}
+
+/// Set a TOML local time value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
+pub fn set_time(
+  doc: Document,
+  key: List(String),
+  value: Time,
+) -> Result(Document, EditError) {
+  set_value(doc, key, ast.Time(value.text))
+}
+
+/// Set a TOML date-time value at a key path.
+///
+/// Existing values are replaced in place. Missing keys are inserted, creating a
+/// table header when needed.
+pub fn set_datetime(
+  doc: Document,
+  key: List(String),
+  value: DateTime,
+) -> Result(Document, EditError) {
+  set_value(doc, key, ast.DateTime(value.text))
+}
+
+/// Set a TOML array value at a key path.
+///
+/// Items are emitted in order using a default flow-style representation
+/// (`[a, b, c]`). Existing values are replaced in place. Missing keys are
+/// inserted, creating a table header when needed.
+pub fn set_array(
+  doc: Document,
+  key: List(String),
+  items: List(Value),
+) -> Result(Document, EditError) {
+  let ast_items = list.map(items, value_to_array_item)
+  set_value(doc, key, ast.Array(ast_items, emit_array_items(ast_items)))
+}
+
+/// Set a TOML inline table value at a key path.
+///
+/// Entries are emitted in order using a default flow-style representation
+/// (`{ a = 1, b = 2 }`). Each entry's key path is rendered as a dotted key
+/// when it contains more than one segment. Existing values are replaced in
+/// place. Missing keys are inserted, creating a table header when needed.
+pub fn set_inline_table(
+  doc: Document,
+  key: List(String),
+  entries: List(#(List(String), Value)),
+) -> Result(Document, EditError) {
+  case validate_inline_entry_keys(entries) {
+    Error(error) -> Error(error)
+    Ok(Nil) -> {
+      let ast_entries = list.map(entries, value_to_inline_entry)
+      set_value(
+        doc,
+        key,
+        ast.InlineTable(ast_entries, emit_inline_table(ast_entries)),
+      )
+    }
+  }
+}
+
+/// Append a new table to an array of tables at a key path.
+///
+/// A `[[key]]` header is appended to the document followed by the supplied
+/// entries. Works whether or not an array of tables already exists at the key
+/// path; if no array of tables exists yet, a new one is created.
+pub fn append_array_of_tables(
+  doc: Document,
+  key: List(String),
+  entries: List(#(List(String), Value)),
+) -> Result(Document, EditError) {
+  case validate_edit_key(key) {
+    Error(error) -> Error(error)
+    Ok(Nil) ->
+      case validate_inline_entry_keys(entries) {
+        Error(error) -> Error(error)
+        Ok(Nil) -> {
+          let Document(
+            root: ast.Table(entries: doc_entries, header: header),
+            ..,
+          ) = doc
+          case array_of_tables_key_conflicts(doc_entries, [], False, key) {
+            True -> Error(KeyConflict(key))
+            False -> {
+              let new_entries =
+                list.append(
+                  [
+                    ast.TableHeader(ast.Header(
+                      key: key_from_strings(key),
+                      kind: ast.ArrayOfTablesHeader,
+                      trivia: ast.Trivia(""),
+                    )),
+                  ],
+                  list.map(entries, fn(entry) {
+                    let #(path, value) = entry
+                    ast.KeyValue(
+                      leading: ast.Trivia(""),
+                      key: key_from_strings(path),
+                      value: value_to_ast(value),
+                      trailing: ast.Trivia("\n"),
+                    )
+                  }),
+                )
+              Ok(
+                Document(
+                  ..doc,
+                  root: ast.Table(
+                    entries: list.append(doc_entries, new_entries),
+                    header: header,
+                  ),
+                  original_source: None,
+                ),
+              )
+            }
+          }
+        }
+      }
+  }
+}
+
+fn value_to_ast(value: Value) -> ast.Value {
+  case value {
+    StringValue(s) -> ast.String(s, ast.BasicString, basic_string_repr(s))
+    IntValue(i) -> ast.Int(i, int.to_string(i))
+    FloatValue(f) -> ast.Float(f, float.to_string(f))
+    SpecialFloatValue(s) -> {
+      let #(internal, source_text) = case s {
+        PositiveInfinity -> #(ast.PositiveInfinity, "inf")
+        NegativeInfinity -> #(ast.NegativeInfinity, "-inf")
+        NotANumber -> #(ast.NotANumber, "nan")
+      }
+      ast.SpecialFloat(internal, source_text)
+    }
+    BoolValue(b) -> {
+      let repr = case b {
+        True -> "true"
+        False -> "false"
+      }
+      ast.Bool(b, repr)
+    }
+    DateValue(d) -> ast.Date(d.text)
+    TimeValue(t) -> ast.Time(t.text)
+    DateTimeValue(d) -> ast.DateTime(d.text)
+    ArrayValue(items) -> {
+      let ast_items = list.map(items, value_to_array_item)
+      ast.Array(ast_items, emit_array_items(ast_items))
+    }
+    InlineTableValue(entries) -> {
+      let ast_entries = list.map(entries, value_to_inline_entry)
+      ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
+    }
+    // TableValue inside a Value is rendered as an inline table; the only
+    // structural difference between `TableValue` and `InlineTableValue` is
+    // where they appear in a document, and nested values can only embed
+    // inline tables.
+    TableValue(entries) -> {
+      let ast_entries = list.map(entries, value_to_inline_entry)
+      ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
+    }
+    ArrayOfTablesValue(items) -> {
+      let ast_items =
+        list.map(items, fn(entries) {
+          let ast_entries = list.map(entries, value_to_inline_entry)
+          ast.ArrayItem(
+            leading: ast.Trivia(""),
+            value: ast.InlineTable(ast_entries, emit_inline_table(ast_entries)),
+            trailing: ast.Trivia(""),
+          )
+        })
+      ast.Array(ast_items, emit_array_items(ast_items))
+    }
+  }
+}
+
+fn value_to_array_item(value: Value) -> ast.ArrayItem {
+  ast.ArrayItem(
+    leading: ast.Trivia(""),
+    value: value_to_ast(value),
+    trailing: ast.Trivia(""),
+  )
+}
+
+fn value_to_inline_entry(
+  entry: #(List(String), Value),
+) -> ast.InlineTableEntry {
+  let #(path, value) = entry
+  ast.InlineTableEntry(
+    leading: ast.Trivia(""),
+    key: key_from_strings(path),
+    value: value_to_ast(value),
+    trailing: ast.Trivia(""),
+  )
+}
+
+fn emit_array_items(items: List(ast.ArrayItem)) -> String {
+  case items {
+    [] -> "[]"
+    _ ->
+      "["
+      <> {
+        items
+        |> list.map(fn(item) {
+          let ast.ArrayItem(leading: _, value: value, trailing: _) = item
+          emit_value(value)
+        })
+        |> string.join(with: ", ")
+      }
+      <> "]"
+  }
+}
+
+fn validate_inline_entry_keys(
+  entries: List(#(List(String), Value)),
+) -> Result(Nil, EditError) {
+  case entries {
+    [] -> Ok(Nil)
+    [#(path, _), ..rest] ->
+      case validate_edit_key(path) {
+        Error(error) -> Error(error)
+        Ok(Nil) -> validate_inline_entry_keys(rest)
+      }
+  }
+}
+
+fn array_of_tables_key_conflicts(
+  entries: List(ast.Entry),
+  active_table: List(String),
+  in_aot: Bool,
+  target: List(String),
+) -> Bool {
+  case entries {
+    [] -> False
+    [entry, ..rest] -> {
+      let #(next_active_table, next_in_aot) = case entry {
+        ast.TableHeader(ast.Header(key: key, kind: kind, trivia: _)) -> #(
+          key_to_strings(key),
+          kind == ast.ArrayOfTablesHeader,
+        )
+        _ -> #(active_table, in_aot)
+      }
+      let conflicts = case entry {
+        ast.TableHeader(ast.Header(key: key, kind: ast.StandardTable, trivia: _)) ->
+          key_to_strings(key) == target
+        ast.TableHeader(ast.Header(
+          key: key,
+          kind: ast.ArrayOfTablesHeader,
+          trivia: _,
+        )) -> {
+          let header_key = key_to_strings(key)
+          // Appending to an existing array of tables at the same path is the
+          // intended behavior; only flag prefix-overlapping AoT headers as
+          // conflicts.
+          header_key != target && key_path_conflicts(header_key, target)
+        }
+        ast.KeyValue(key: key, ..) ->
+          case in_aot {
+            // KeyValues inside an AoT instance are scoped to that instance
+            // and do not conflict with root-level paths.
+            True -> False
+            False -> {
+              let full_key = list.append(active_table, key_to_strings(key))
+              key_path_conflicts(full_key, target)
+            }
+          }
+        _ -> False
+      }
+      conflicts
+      || array_of_tables_key_conflicts(
+        rest,
+        next_active_table,
+        next_in_aot,
+        target,
+      )
+    }
+  }
 }
 
 /// Remove an existing value from a document.

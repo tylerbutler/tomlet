@@ -1935,7 +1935,7 @@ fn exponent_repr_is_valid(text: String) -> Bool {
   )
 }
 
-fn date_repr_is_valid(text: String) -> Bool {
+pub fn date_repr_is_valid(text: String) -> Bool {
   case
     string.length(text) == 10
     && string.slice(text, 4, 1) == "-"
@@ -1946,7 +1946,7 @@ fn date_repr_is_valid(text: String) -> Bool {
   }
 }
 
-fn datetime_repr_is_valid(text: String) -> Bool {
+pub fn datetime_repr_is_valid(text: String) -> Bool {
   case string.split_once(text, "T") {
     Ok(#(date, time_offset)) ->
       date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
@@ -2005,7 +2005,7 @@ fn offset_repr_is_valid(text: String) -> Bool {
   }
 }
 
-fn time_repr_is_valid(text: String) -> Bool {
+pub fn time_repr_is_valid(text: String) -> Bool {
   case
     string.length(text) >= 8
     && string.slice(text, 2, 1) == ":"

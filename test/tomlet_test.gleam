@@ -636,3 +636,194 @@ pub fn set_string_escapes_quoted_key_segments_test() {
 
   assert tomlet.to_string(updated) == "\"quoted \\\" package\" = \"tomato\"\n"
 }
+
+// --- Issue #13: typed date/time/datetime getters ---
+
+pub fn get_date_reads_date_value_test() {
+  let assert Ok(doc) = tomlet.parse("released = 1979-05-27\n")
+  let assert Ok(date) = tomlet.get_date(doc, ["released"])
+  assert tomlet.date_to_string(date) == "1979-05-27"
+}
+
+pub fn get_date_wrong_type_test() {
+  let assert Ok(doc) = tomlet.parse("released = \"1979-05-27\"\n")
+  assert tomlet.get_date(doc, ["released"])
+    == Error(tomlet.WrongType(["released"], "Date"))
+}
+
+pub fn get_date_missing_test() {
+  let assert Ok(doc) = tomlet.parse("")
+  assert tomlet.get_date(doc, ["missing"])
+    == Error(tomlet.KeyNotFound(["missing"]))
+}
+
+pub fn get_time_reads_time_value_test() {
+  let assert Ok(doc) = tomlet.parse("alarm = 07:32:00\n")
+  let assert Ok(time) = tomlet.get_time(doc, ["alarm"])
+  assert tomlet.time_to_string(time) == "07:32:00"
+}
+
+pub fn get_time_wrong_type_test() {
+  let assert Ok(doc) = tomlet.parse("alarm = 1\n")
+  assert tomlet.get_time(doc, ["alarm"])
+    == Error(tomlet.WrongType(["alarm"], "Time"))
+}
+
+pub fn get_datetime_reads_datetime_value_test() {
+  let assert Ok(doc) = tomlet.parse("timestamp = 1979-05-27T07:32:00Z\n")
+  let assert Ok(dt) = tomlet.get_datetime(doc, ["timestamp"])
+  assert tomlet.datetime_to_string(dt) == "1979-05-27T07:32:00Z"
+}
+
+pub fn get_datetime_wrong_type_test() {
+  let assert Ok(doc) = tomlet.parse("timestamp = 1979-05-27\n")
+  assert tomlet.get_datetime(doc, ["timestamp"])
+    == Error(tomlet.WrongType(["timestamp"], "DateTime"))
+}
+
+// --- Issue #12: typed date/time/datetime setters ---
+
+pub fn date_from_string_valid_test() {
+  let assert Ok(date) = tomlet.date_from_string("1979-05-27")
+  assert tomlet.date_to_string(date) == "1979-05-27"
+}
+
+pub fn date_from_string_invalid_test() {
+  assert tomlet.date_from_string("not-a-date")
+    == Error(tomlet.InvalidDate("not-a-date"))
+}
+
+pub fn time_from_string_valid_test() {
+  let assert Ok(time) = tomlet.time_from_string("07:32:00")
+  assert tomlet.time_to_string(time) == "07:32:00"
+}
+
+pub fn time_from_string_invalid_test() {
+  assert tomlet.time_from_string("25:00:00")
+    == Error(tomlet.InvalidTime("25:00:00"))
+}
+
+pub fn datetime_from_string_valid_test() {
+  let assert Ok(dt) = tomlet.datetime_from_string("1979-05-27T07:32:00Z")
+  assert tomlet.datetime_to_string(dt) == "1979-05-27T07:32:00Z"
+}
+
+pub fn datetime_from_string_invalid_test() {
+  assert tomlet.datetime_from_string("bogus")
+    == Error(tomlet.InvalidDateTime("bogus"))
+}
+
+pub fn set_date_inserts_new_key_test() {
+  let assert Ok(date) = tomlet.date_from_string("1979-05-27")
+  let assert Ok(updated) = tomlet.set_date(tomlet.new(), ["released"], date)
+
+  assert tomlet.to_string(updated) == "released = 1979-05-27\n"
+  let assert Ok(read) = tomlet.get_date(updated, ["released"])
+  assert tomlet.date_to_string(read) == "1979-05-27"
+}
+
+pub fn set_time_replaces_existing_value_test() {
+  let assert Ok(doc) = tomlet.parse("alarm = 06:00:00\n")
+  let assert Ok(time) = tomlet.time_from_string("07:32:00")
+  let assert Ok(updated) = tomlet.set_time(doc, ["alarm"], time)
+
+  assert tomlet.to_string(updated) == "alarm = 07:32:00\n"
+}
+
+pub fn set_datetime_replaces_existing_value_test() {
+  let assert Ok(doc) = tomlet.parse("timestamp = 1970-01-01T00:00:00Z\n")
+  let assert Ok(dt) = tomlet.datetime_from_string("1979-05-27T07:32:00Z")
+  let assert Ok(updated) = tomlet.set_datetime(doc, ["timestamp"], dt)
+
+  assert tomlet.to_string(updated) == "timestamp = 1979-05-27T07:32:00Z\n"
+}
+
+// --- Issue #12: set_array, set_inline_table, append_array_of_tables ---
+
+pub fn set_array_inserts_new_homogeneous_array_test() {
+  let assert Ok(updated) =
+    tomlet.set_array(tomlet.new(), ["ports"], [
+      tomlet.IntValue(8000),
+      tomlet.IntValue(8001),
+    ])
+
+  assert tomlet.to_string(updated) == "ports = [8000, 8001]\n"
+  assert tomlet.get(updated, ["ports"])
+    == Ok(tomlet.ArrayValue([tomlet.IntValue(8000), tomlet.IntValue(8001)]))
+}
+
+pub fn set_array_replaces_existing_array_test() {
+  let assert Ok(doc) = tomlet.parse("ports = [1, 2, 3]\n")
+  let assert Ok(updated) =
+    tomlet.set_array(doc, ["ports"], [tomlet.StringValue("a")])
+
+  assert tomlet.to_string(updated) == "ports = [\"a\"]\n"
+}
+
+pub fn set_array_supports_nested_arrays_test() {
+  let assert Ok(updated) =
+    tomlet.set_array(tomlet.new(), ["matrix"], [
+      tomlet.ArrayValue([tomlet.IntValue(1), tomlet.IntValue(2)]),
+      tomlet.ArrayValue([tomlet.IntValue(3), tomlet.IntValue(4)]),
+    ])
+
+  assert tomlet.to_string(updated) == "matrix = [[1, 2], [3, 4]]\n"
+}
+
+pub fn set_array_empty_test() {
+  let assert Ok(updated) = tomlet.set_array(tomlet.new(), ["xs"], [])
+  assert tomlet.to_string(updated) == "xs = []\n"
+}
+
+pub fn set_inline_table_inserts_new_entry_test() {
+  let assert Ok(updated) =
+    tomlet.set_inline_table(tomlet.new(), ["package"], [
+      #(["name"], tomlet.StringValue("tomato")),
+      #(["version"], tomlet.StringValue("0.1.0")),
+    ])
+
+  assert tomlet.to_string(updated)
+    == "package = { name = \"tomato\", version = \"0.1.0\" }\n"
+}
+
+pub fn set_inline_table_supports_dotted_keys_test() {
+  let assert Ok(updated) =
+    tomlet.set_inline_table(tomlet.new(), ["pkg"], [
+      #(["meta", "downloads"], tomlet.IntValue(42)),
+    ])
+
+  assert tomlet.to_string(updated) == "pkg = { meta.downloads = 42 }\n"
+}
+
+pub fn set_inline_table_empty_test() {
+  let assert Ok(updated) = tomlet.set_inline_table(tomlet.new(), ["p"], [])
+  assert tomlet.to_string(updated) == "p = {}\n"
+}
+
+pub fn append_array_of_tables_creates_first_table_test() {
+  let assert Ok(updated) =
+    tomlet.append_array_of_tables(tomlet.new(), ["packages"], [
+      #(["name"], tomlet.StringValue("tomato")),
+    ])
+
+  assert tomlet.to_string(updated) == "[[packages]]\nname = \"tomato\"\n"
+}
+
+pub fn append_array_of_tables_appends_to_existing_test() {
+  let input = "[[packages]]\nname = \"tomato\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(updated) =
+    tomlet.append_array_of_tables(doc, ["packages"], [
+      #(["name"], tomlet.StringValue("carrot")),
+    ])
+
+  assert tomlet.to_string(updated)
+    == "[[packages]]\nname = \"tomato\"\n[[packages]]\nname = \"carrot\"\n"
+  assert tomlet.get(updated, ["packages"])
+    == Ok(
+      tomlet.ArrayOfTablesValue([
+        [#(["name"], tomlet.StringValue("tomato"))],
+        [#(["name"], tomlet.StringValue("carrot"))],
+      ]),
+    )
+}

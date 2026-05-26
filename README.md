@@ -43,10 +43,10 @@ let assert Ok(doc) = tomlet.parse_bytes(<<"answer = 42\n":utf8>>)
 let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
 ```
 
-Typed accessors include `get_string`, `get_int`, `get_bool`, and `get_float`.
-Use `get` when you need to inspect any TOML value through the public
-`tomlet.Value` type, including dates, times, arrays, inline tables, standard
-tables, and arrays of tables.
+Typed accessors include `get_string`, `get_int`, `get_bool`, `get_float`,
+`get_date`, `get_time`, and `get_datetime`. Use `get` when you need to inspect
+any TOML value through the public `tomlet.Value` type, including dates, times,
+arrays, inline tables, standard tables, and arrays of tables.
 
 ```gleam
 let assert Ok(doc) = tomlet.parse("released = 2026-05-25\n")
@@ -73,8 +73,10 @@ successful edits from invalid paths, key conflicts, missing keys, and unsafe
 comment text. Comment insertion rejects TOML-forbidden comment control
 characters. New keys are emitted as bare TOML keys when possible and quoted when
 needed. Current edit helpers include `set_string`, `set_int`, `set_bool`,
-`set_float`, `remove`, and
-`insert_comment_before`.
+`set_float`, `set_date`, `set_time`, `set_datetime`, `set_array`,
+`set_inline_table`, `append_array_of_tables`, `remove`, and
+`insert_comment_before`. Construct typed date, time, and date-time values with
+`date_from_string`, `time_from_string`, and `datetime_from_string`.
 
 The `set_*` helpers can replace existing values inside inline tables, such as
 `["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside an
