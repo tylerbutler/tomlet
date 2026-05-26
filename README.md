@@ -51,6 +51,8 @@ tables, and arrays of tables.
 ```gleam
 let assert Ok(doc) = tomlet.parse("released = 2026-05-25\n")
 let assert Ok(tomlet.DateValue(date)) = tomlet.get(doc, ["released"])
+let text = tomlet.date_to_string(date)
+// -> "2026-05-25"
 ```
 
 Inline table values are addressed with the same key path syntax:
@@ -76,8 +78,9 @@ needed. Current edit helpers include `set_string`, `set_int`, `set_bool`,
 
 The `set_*` helpers can replace existing values inside inline tables, such as
 `["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside an
-existing inline table are reported as `KeyConflict`; create those keys by
-rewriting the table shape explicitly rather than relying on implicit insertion.
+existing inline table are reported as `InlineTableInsertUnsupported`; create
+those keys by rewriting the table shape explicitly rather than relying on
+implicit insertion.
 
 ## Examples
 

@@ -63,6 +63,9 @@ pub type SyntaxErrorKind {
   ExpectedTableHeader
 
   /// TOML syntax was invalid, but the parser does not expose a narrower stable category.
+  ///
+  /// Future releases may classify some of these errors under new, more specific
+  /// variants. Match with a catch-all (`_`) branch to remain forward compatible.
   InvalidToml
 }
 
@@ -82,19 +85,67 @@ pub type GetError {
 ///
 /// For forward compatibility, prefer a catch-all (`_`) branch when matching
 /// this type so your code can tolerate future variants.
+///
+/// The table-shaped variants (`InlineTableValue`, `TableValue`,
+/// `ArrayOfTablesValue`) expose their entries as an ordered association list of
+/// `#(key_path, value)` pairs and will remain shaped that way. The key path is
+/// the dotted path relative to the table, e.g. `["pkg", "name"]` for an entry
+/// written as `pkg.name = ...` inside an inline table.
 pub type Value {
   StringValue(String)
   IntValue(Int)
   FloatValue(Float)
   SpecialFloatValue(SpecialFloat)
   BoolValue(Bool)
-  DateValue(String)
-  TimeValue(String)
-  DateTimeValue(String)
+  DateValue(Date)
+  TimeValue(Time)
+  DateTimeValue(DateTime)
   ArrayValue(List(Value))
   InlineTableValue(List(#(List(String), Value)))
   TableValue(List(#(List(String), Value)))
   ArrayOfTablesValue(List(List(#(List(String), Value))))
+}
+
+/// A TOML local date value.
+///
+/// Opaque so structured accessors can be added in a later release without
+/// breaking existing code. Use `date_to_string` to read the original lexical
+/// form (e.g. `"1979-05-27"`).
+pub opaque type Date {
+  Date(text: String)
+}
+
+/// A TOML local time value.
+///
+/// Opaque so structured accessors can be added in a later release without
+/// breaking existing code. Use `time_to_string` to read the original lexical
+/// form (e.g. `"07:32:00"`).
+pub opaque type Time {
+  Time(text: String)
+}
+
+/// A TOML date-time value.
+///
+/// Opaque so structured accessors can be added in a later release without
+/// breaking existing code. Use `datetime_to_string` to read the original
+/// lexical form (e.g. `"1979-05-27T07:32:00Z"`).
+pub opaque type DateTime {
+  DateTime(text: String)
+}
+
+/// Return the original lexical form of a TOML date value.
+pub fn date_to_string(date: Date) -> String {
+  date.text
+}
+
+/// Return the original lexical form of a TOML time value.
+pub fn time_to_string(time: Time) -> String {
+  time.text
+}
+
+/// Return the original lexical form of a TOML date-time value.
+pub fn datetime_to_string(datetime: DateTime) -> String {
+  datetime.text
 }
 
 /// A TOML special floating-point value.
@@ -127,9 +178,21 @@ pub type EditError {
   /// Inserting the key would conflict with an existing scalar, table, or array
   /// of tables.
   KeyConflict(key: List(String))
+
+  /// The edit would have to insert a new key inside an existing inline table.
+  ///
+  /// Inline tables are written on a single line and cannot be extended in
+  /// place. Rewrite the table shape explicitly (for example, with `set_*` on a
+  /// standard table) instead of relying on implicit insertion.
+  InlineTableInsertUnsupported(key: List(String))
 }
 
 /// Create an empty TOML document.
+///
+/// Equivalent to `parse("")` for downstream callers; the only observable
+/// difference is that `parse("")` initially round-trips to `""` even after the
+/// document is modified, while the document returned by `new` always emits its
+/// current content.
 pub fn new() -> Document {
   Document(
     root: ast.Table(entries: [], header: None),
@@ -169,12 +232,19 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
   }
 }
 
+/// A one-based source position.
+pub type Position {
+  Position(line: Int, column: Int)
+}
+
 /// Convert a byte offset into a one-based line and column.
 ///
 /// Offsets beyond the end of the input return the position just after the last
 /// character. CRLF is treated as a single line break.
-pub fn line_column(input: String, offset: Int) -> #(Int, Int) {
-  line_column_loop(string.to_utf_codepoints(input), offset, 0, 1, 1)
+pub fn line_column(input: String, offset: Int) -> Position {
+  let #(line, column) =
+    line_column_loop(string.to_utf_codepoints(input), offset, 0, 1, 1)
+  Position(line: line, column: column)
 }
 
 fn line_column_loop(
@@ -380,9 +450,9 @@ fn public_value(value: ast.Value) -> Value {
       SpecialFloatValue(public_special_float(value))
     ast.Bool(value, source_text: _) -> BoolValue(value)
     ast.String(value, style: _, source_text: _) -> StringValue(value)
-    ast.Date(source_text) -> DateValue(source_text)
-    ast.Time(source_text) -> TimeValue(source_text)
-    ast.DateTime(source_text) -> DateTimeValue(source_text)
+    ast.Date(source_text) -> DateValue(Date(source_text))
+    ast.Time(source_text) -> TimeValue(Time(source_text))
+    ast.DateTime(source_text) -> DateTimeValue(DateTime(source_text))
     ast.Array(items, source_text: _) ->
       ArrayValue(list.map(items, public_array_item))
     ast.InlineTable(entries, source_text: _) ->
@@ -808,20 +878,24 @@ fn set_value(
             original_source: None,
           ))
         False ->
-          case new_key_conflicts(entries, key) {
-            True -> Error(KeyConflict(key))
-            False -> {
-              let assert Ok(#(parent, leaf)) = parent_and_leaf(key)
-              let new_entry = new_key_value(leaf, value)
-              let appended_entries =
-                append_new_entry(updated_entries, parent, new_entry)
-              Ok(Document(
-                root: ast.Table(entries: appended_entries, header: header),
-                trailing_trivia: trailing_trivia,
-                line_ending: line_ending,
-                original_source: None,
-              ))
-            }
+          case inline_table_blocks_key(entries, [], key) {
+            True -> Error(InlineTableInsertUnsupported(key))
+            False ->
+              case new_key_conflicts(entries, key) {
+                True -> Error(KeyConflict(key))
+                False -> {
+                  let assert Ok(#(parent, leaf)) = parent_and_leaf(key)
+                  let new_entry = new_key_value(leaf, value)
+                  let appended_entries =
+                    append_new_entry(updated_entries, parent, new_entry)
+                  Ok(Document(
+                    root: ast.Table(entries: appended_entries, header: header),
+                    trailing_trivia: trailing_trivia,
+                    line_ending: line_ending,
+                    original_source: None,
+                  ))
+                }
+              }
           }
       }
     }
@@ -1071,6 +1145,30 @@ fn append_inside_table(
 
 fn new_key_conflicts(entries: List(ast.Entry), target: List(String)) -> Bool {
   new_key_conflicts_with_table(entries, [], target)
+}
+
+fn inline_table_blocks_key(
+  entries: List(ast.Entry),
+  active_table: List(String),
+  target: List(String),
+) -> Bool {
+  case entries {
+    [] -> False
+    [entry, ..rest] -> {
+      let next_active_table = case entry {
+        ast.TableHeader(header) -> header_key(header)
+        _ -> active_table
+      }
+      let blocks = case entry {
+        ast.KeyValue(key: key, value: ast.InlineTable(..), ..) -> {
+          let full_key = list.append(active_table, key_to_strings(key))
+          list_starts_with(target, full_key) && full_key != target
+        }
+        _ -> False
+      }
+      blocks || inline_table_blocks_key(rest, next_active_table, target)
+    }
+  }
 }
 
 fn new_key_conflicts_with_table(

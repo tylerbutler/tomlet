@@ -162,17 +162,22 @@ pub fn crlf_input_is_accepted_test() {
 }
 
 pub fn line_column_returns_one_based_location_test() {
-  assert tomlet.line_column("name = 1\nbad = ???\n", 9) == #(2, 1)
-  assert tomlet.line_column("name = 1\nbad = ???\n", 15) == #(2, 7)
+  assert tomlet.line_column("name = 1\nbad = ???\n", 9)
+    == tomlet.Position(line: 2, column: 1)
+  assert tomlet.line_column("name = 1\nbad = ???\n", 15)
+    == tomlet.Position(line: 2, column: 7)
 }
 
 pub fn line_column_handles_crlf_input_test() {
-  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 10) == #(2, 1)
-  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 16) == #(2, 7)
+  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 10)
+    == tomlet.Position(line: 2, column: 1)
+  assert tomlet.line_column("name = 1\r\nbad = ???\r\n", 16)
+    == tomlet.Position(line: 2, column: 7)
 }
 
 pub fn line_column_clamps_offsets_past_end_test() {
-  assert tomlet.line_column("name = 1\n", 999) == #(2, 1)
+  assert tomlet.line_column("name = 1\n", 999)
+    == tomlet.Position(line: 2, column: 1)
 }
 
 pub fn parse_multiline_basic_string_test() {

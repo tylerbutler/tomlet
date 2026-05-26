@@ -63,10 +63,12 @@ pub fn get_returns_public_date_time_and_array_values_test() {
     <> "matrix = [[1, 2], [3, 4]]\n"
   let assert Ok(doc) = tomlet.parse(input)
 
-  assert tomlet.get(doc, ["local_date"]) == Ok(tomlet.DateValue("1979-05-27"))
-  assert tomlet.get(doc, ["local_time"]) == Ok(tomlet.TimeValue("07:32:00"))
-  assert tomlet.get(doc, ["timestamp"])
-    == Ok(tomlet.DateTimeValue("1979-05-27T07:32:00Z"))
+  let assert Ok(tomlet.DateValue(date)) = tomlet.get(doc, ["local_date"])
+  assert tomlet.date_to_string(date) == "1979-05-27"
+  let assert Ok(tomlet.TimeValue(time)) = tomlet.get(doc, ["local_time"])
+  assert tomlet.time_to_string(time) == "07:32:00"
+  let assert Ok(tomlet.DateTimeValue(datetime)) = tomlet.get(doc, ["timestamp"])
+  assert tomlet.datetime_to_string(datetime) == "1979-05-27T07:32:00Z"
   assert tomlet.get(doc, ["ports"])
     == Ok(
       tomlet.ArrayValue([
@@ -458,12 +460,12 @@ pub fn set_string_updates_dotted_key_inside_inline_table_test() {
     == "package = { metadata.name = \"carrot\" }\n"
 }
 
-pub fn set_string_missing_inline_table_key_returns_conflict_test() {
+pub fn set_string_missing_inline_table_key_returns_unsupported_test() {
   let input = "package = { name = \"tomato\" }\n"
   let assert Ok(doc) = tomlet.parse(input)
 
   assert tomlet.set_string(doc, ["package", "version"], "0.1.0")
-    == Error(tomlet.KeyConflict(["package", "version"]))
+    == Error(tomlet.InlineTableInsertUnsupported(["package", "version"]))
 }
 
 pub fn set_string_appends_new_root_key_before_tables_test() {
