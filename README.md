@@ -5,7 +5,8 @@ A round-tripping TOML parser and writer for Gleam.
 Tomlet parses TOML 1.0.0 into an opaque document that retains comments, key
 order, and surrounding trivia. Unedited documents round-trip to their original
 text; edited values are written back while preserving nearby comments and
-document structure. Inspired by Rust's
+document structure. `Document` stays opaque so Tomlet can evolve its internal
+syntax tree without breaking the public API. Inspired by Rust's
 [`toml_edit`](https://docs.rs/toml_edit) and Python's
 [`tomlkit`](https://github.com/python-poetry/tomlkit).
 
