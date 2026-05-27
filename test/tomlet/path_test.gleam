@@ -74,7 +74,10 @@ pub fn get_nested_inline_table_wrong_type_test() {
     tomlet.parse("package = { metadata = { downloads = 42 } }\n")
 
   assert tomlet.get_string(doc, ["package", "metadata", "downloads"])
-    == Error(tomlet.WrongType(["package", "metadata", "downloads"], "String"))
+    == Error(tomlet.WrongType(
+      ["package", "metadata", "downloads"],
+      tomlet.ExpectedString,
+    ))
 }
 
 pub fn inline_table_missing_nested_key_is_key_not_found_test() {

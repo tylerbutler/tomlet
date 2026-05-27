@@ -12,6 +12,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import tomlet/ast
+import tomlet/key as key_utils
 import tomlet/parser
 import tomlet/path
 
@@ -77,7 +78,18 @@ pub type GetError {
   KeyNotFound(key: List(String))
 
   /// A value exists at the requested key path, but it has a different TOML type.
-  WrongType(key: List(String), expected: String)
+  WrongType(key: List(String), expected: ExpectedType)
+}
+
+/// Stable TOML value kinds used in typed read errors.
+pub type ExpectedType {
+  ExpectedString
+  ExpectedInt
+  ExpectedBool
+  ExpectedFloat
+  ExpectedDate
+  ExpectedTime
+  ExpectedDateTime
 }
 
 /// A TOML value without internal formatting trivia.
@@ -85,7 +97,7 @@ pub type GetError {
 /// Variants are part of the stable public API. Adding, removing, or renaming a
 /// variant is treated as a breaking change.
 ///
-/// The table-shaped variants (`InlineTableValue`, `TableValue`,
+/// The table-shaped variants (`InlineTableValue`, `StandardTableValue`,
 /// `ArrayOfTablesValue`) expose their entries as an ordered association list of
 /// `#(key_path, value)` pairs and will remain shaped that way. The key path is
 /// the dotted path relative to the table, e.g. `["pkg", "name"]` for an entry
@@ -101,7 +113,7 @@ pub type Value {
   DateTimeValue(DateTime)
   ArrayValue(List(Value))
   InlineTableValue(List(#(List(String), Value)))
-  TableValue(List(#(List(String), Value)))
+  StandardTableValue(List(#(List(String), Value)))
   ArrayOfTablesValue(List(List(#(List(String), Value))))
 }
 
@@ -253,6 +265,9 @@ pub type EditError {
   /// place. Rewrite the table shape explicitly (for example, with `set_*` on a
   /// standard table) instead of relying on implicit insertion.
   InlineTableInsertUnsupported(key: List(String))
+
+  /// The supplied value cannot be represented in the requested edit context.
+  InvalidValue
 }
 
 /// Create an empty TOML document.
@@ -439,10 +454,95 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
             original_source: Some(input),
           ))
         Error(parser.Unexpected(_got, expected, offset)) ->
-          Error(InvalidSyntax(syntax_error_kind(expected), offset))
+          Error(InvalidSyntax(
+            syntax_error_kind(expected),
+            normalized_offset_to_original(input, offset),
+          ))
         Error(parser.KeyAlreadyInUse(key, offset)) ->
-          Error(DuplicateKey(key, offset))
+          Error(DuplicateKey(key, normalized_offset_to_original(input, offset)))
       }
+    }
+  }
+}
+
+fn normalized_offset_to_original(input: String, target: Int) -> Int {
+  normalized_offset_to_original_loop(
+    string.to_utf_codepoints(input),
+    target,
+    0,
+    0,
+    True,
+  )
+}
+
+fn normalized_offset_to_original_loop(
+  codepoints: List(UtfCodepoint),
+  target: Int,
+  normalized: Int,
+  original: Int,
+  at_start: Bool,
+) -> Int {
+  case normalized >= target, codepoints {
+    True, _ -> original
+    False, [] -> original
+    False, [first, second, ..rest] -> {
+      case
+        string.utf_codepoint_to_int(first),
+        string.utf_codepoint_to_int(second),
+        at_start
+      {
+        65_279, _, True ->
+          normalized_offset_to_original_loop(
+            [second, ..rest],
+            target,
+            normalized,
+            original + 3,
+            False,
+          )
+        13, 10, _ ->
+          normalized_offset_to_original_loop(
+            rest,
+            target,
+            normalized + 1,
+            original + 2,
+            False,
+          )
+        _, _, _ ->
+          normalized_offset_to_original_next(
+            [first, second, ..rest],
+            target,
+            normalized,
+            original,
+          )
+      }
+    }
+    False, remaining ->
+      normalized_offset_to_original_next(
+        remaining,
+        target,
+        normalized,
+        original,
+      )
+  }
+}
+
+fn normalized_offset_to_original_next(
+  codepoints: List(UtfCodepoint),
+  target: Int,
+  normalized: Int,
+  original: Int,
+) -> Int {
+  case codepoints {
+    [] -> original
+    [codepoint, ..rest] -> {
+      let width = string.byte_size(string.from_utf_codepoints([codepoint]))
+      normalized_offset_to_original_loop(
+        rest,
+        target,
+        normalized + width,
+        original + width,
+        False,
+      )
     }
   }
 }
@@ -508,7 +608,7 @@ pub fn get_string(
 ) -> Result(String, GetError) {
   case get_value(doc, key) {
     Ok(ast.String(value, _, _)) -> Ok(value)
-    Ok(_) -> Error(WrongType(key, "String"))
+    Ok(_) -> Error(WrongType(key, ExpectedString))
     Error(error) -> Error(error)
   }
 }
@@ -517,7 +617,7 @@ pub fn get_string(
 pub fn get_int(doc: Document, key: List(String)) -> Result(Int, GetError) {
   case get_value(doc, key) {
     Ok(ast.Int(value, _)) -> Ok(value)
-    Ok(_) -> Error(WrongType(key, "Int"))
+    Ok(_) -> Error(WrongType(key, ExpectedInt))
     Error(error) -> Error(error)
   }
 }
@@ -526,7 +626,7 @@ pub fn get_int(doc: Document, key: List(String)) -> Result(Int, GetError) {
 pub fn get_bool(doc: Document, key: List(String)) -> Result(Bool, GetError) {
   case get_value(doc, key) {
     Ok(ast.Bool(value, _)) -> Ok(value)
-    Ok(_) -> Error(WrongType(key, "Bool"))
+    Ok(_) -> Error(WrongType(key, ExpectedBool))
     Error(error) -> Error(error)
   }
 }
@@ -535,7 +635,7 @@ pub fn get_bool(doc: Document, key: List(String)) -> Result(Bool, GetError) {
 pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
   case get_value(doc, key) {
     Ok(ast.Float(value, _)) -> Ok(value)
-    Ok(_) -> Error(WrongType(key, "Float"))
+    Ok(_) -> Error(WrongType(key, ExpectedFloat))
     Error(error) -> Error(error)
   }
 }
@@ -544,7 +644,7 @@ pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
 pub fn get_date(doc: Document, key: List(String)) -> Result(Date, GetError) {
   case get_value(doc, key) {
     Ok(ast.Date(source_text)) -> Ok(Date(source_text))
-    Ok(_) -> Error(WrongType(key, "Date"))
+    Ok(_) -> Error(WrongType(key, ExpectedDate))
     Error(error) -> Error(error)
   }
 }
@@ -553,7 +653,7 @@ pub fn get_date(doc: Document, key: List(String)) -> Result(Date, GetError) {
 pub fn get_time(doc: Document, key: List(String)) -> Result(Time, GetError) {
   case get_value(doc, key) {
     Ok(ast.Time(source_text)) -> Ok(Time(source_text))
-    Ok(_) -> Error(WrongType(key, "Time"))
+    Ok(_) -> Error(WrongType(key, ExpectedTime))
     Error(error) -> Error(error)
   }
 }
@@ -565,7 +665,7 @@ pub fn get_datetime(
 ) -> Result(DateTime, GetError) {
   case get_value(doc, key) {
     Ok(ast.DateTime(source_text)) -> Ok(DateTime(source_text))
-    Ok(_) -> Error(WrongType(key, "DateTime"))
+    Ok(_) -> Error(WrongType(key, ExpectedDateTime))
     Error(error) -> Error(error)
   }
 }
@@ -586,7 +686,7 @@ fn get_table_value(
       let #(table_entries, found) =
         collect_table_entries(entries, [], key, False, [])
       case found {
-        True -> Ok(TableValue(table_entries))
+        True -> Ok(StandardTableValue(table_entries))
         False -> Error(KeyNotFound(key))
       }
     }
@@ -665,7 +765,7 @@ fn collect_table_entries(
       case entry {
         ast.KeyValue(key: key, value: value, ..) -> {
           let full_key = list.append(active_table, key_to_strings(key))
-          case list_starts_with(full_key, target) && full_key != target {
+          case key_utils.starts_with(full_key, target) && full_key != target {
             True ->
               collect_table_entries(rest, next_active_table, target, True, [
                 #(drop_prefix(full_key, target), public_value(value)),
@@ -824,8 +924,13 @@ pub fn set_array(
   key: List(String),
   items: List(Value),
 ) -> Result(Document, EditError) {
-  let ast_items = list.map(items, value_to_array_item)
-  set_value(doc, key, ast.Array(ast_items, emit_array_items(ast_items)))
+  case validate_values(items) {
+    Error(error) -> Error(error)
+    Ok(Nil) -> {
+      let ast_items = list.map(items, value_to_array_item)
+      set_value(doc, key, ast.Array(ast_items, emit_array_items(ast_items)))
+    }
+  }
 }
 
 /// Set a TOML inline table value at a key path.
@@ -849,7 +954,7 @@ pub fn set_inline_table(
   key: List(String),
   entries: List(#(List(String), Value)),
 ) -> Result(Document, EditError) {
-  case validate_inline_entry_keys(entries) {
+  case validate_table_entries(entries) {
     Error(error) -> Error(error)
     Ok(Nil) -> {
       let ast_entries = list.map(entries, value_to_inline_entry)
@@ -887,7 +992,7 @@ pub fn append_array_of_tables(
   case validate_edit_key(key) {
     Error(error) -> Error(error)
     Ok(Nil) ->
-      case validate_inline_entry_keys(entries) {
+      case validate_table_entries(entries) {
         Error(error) -> Error(error)
         Ok(Nil) -> {
           let Document(
@@ -964,11 +1069,7 @@ fn value_to_ast(value: Value) -> ast.Value {
       let ast_entries = list.map(entries, value_to_inline_entry)
       ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
     }
-    // TableValue inside a Value is rendered as an inline table; the only
-    // structural difference between `TableValue` and `InlineTableValue` is
-    // where they appear in a document, and nested values can only embed
-    // inline tables.
-    TableValue(entries) -> {
+    StandardTableValue(entries) -> {
       let ast_entries = list.map(entries, value_to_inline_entry)
       ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
     }
@@ -993,6 +1094,33 @@ fn value_to_array_item(value: Value) -> ast.ArrayItem {
     value: value_to_ast(value),
     trailing: ast.Trivia(""),
   )
+}
+
+fn validate_values(values: List(Value)) -> Result(Nil, EditError) {
+  case values {
+    [] -> Ok(Nil)
+    [value, ..rest] ->
+      case validate_value(value) {
+        Error(error) -> Error(error)
+        Ok(Nil) -> validate_values(rest)
+      }
+  }
+}
+
+fn validate_value(value: Value) -> Result(Nil, EditError) {
+  case value {
+    StringValue(_)
+    | IntValue(_)
+    | FloatValue(_)
+    | SpecialFloatValue(_)
+    | BoolValue(_)
+    | DateValue(_)
+    | TimeValue(_)
+    | DateTimeValue(_) -> Ok(Nil)
+    ArrayValue(items) -> validate_values(items)
+    InlineTableValue(entries) -> validate_table_entries(entries)
+    StandardTableValue(_) | ArrayOfTablesValue(_) -> Error(InvalidValue)
+  }
 }
 
 fn value_to_inline_entry(
@@ -1024,23 +1152,46 @@ fn emit_array_items(items: List(ast.ArrayItem)) -> String {
   }
 }
 
-fn validate_inline_entry_keys(
+fn validate_table_entries(
   entries: List(#(List(String), Value)),
+) -> Result(Nil, EditError) {
+  validate_table_entries_loop(entries, [])
+}
+
+fn validate_table_entries_loop(
+  entries: List(#(List(String), Value)),
+  seen: List(List(String)),
 ) -> Result(Nil, EditError) {
   case entries {
     [] -> Ok(Nil)
-    [#(path, _), ..rest] ->
+    [#(path, value), ..rest] ->
       case validate_edit_key(path) {
         Error(error) -> Error(error)
-        Ok(Nil) -> validate_inline_entry_keys(rest)
+        Ok(Nil) ->
+          case table_entry_conflicts(seen, path) {
+            True -> Error(KeyConflict(path))
+            False ->
+              case validate_value(value) {
+                Error(error) -> Error(error)
+                Ok(Nil) -> validate_table_entries_loop(rest, [path, ..seen])
+              }
+          }
       }
+  }
+}
+
+fn table_entry_conflicts(seen: List(List(String)), path: List(String)) -> Bool {
+  case seen {
+    [] -> False
+    [existing, ..rest] ->
+      key_path_conflicts(existing, path) || table_entry_conflicts(rest, path)
   }
 }
 
 fn array_of_tables_key_conflicts(
   entries: List(ast.Entry),
   active_table: List(String),
-  in_aot: Bool,
+  in_array_of_tables: Bool,
   target: List(String),
 ) -> Bool {
   case entries {
@@ -1051,7 +1202,7 @@ fn array_of_tables_key_conflicts(
           key_to_strings(key),
           kind == ast.ArrayOfTablesHeader,
         )
-        _ -> #(active_table, in_aot)
+        _ -> #(active_table, in_array_of_tables)
       }
       let conflicts = case entry {
         ast.TableHeader(ast.Header(key: key, kind: ast.StandardTable, trivia: _)) ->
@@ -1068,7 +1219,7 @@ fn array_of_tables_key_conflicts(
           header_key != target && key_path_conflicts(header_key, target)
         }
         ast.KeyValue(key: key, ..) ->
-          case in_aot {
+          case in_array_of_tables {
             // KeyValues inside an AoT instance are scoped to that instance
             // and do not conflict with root-level paths.
             True -> False
@@ -1661,7 +1812,7 @@ fn inline_table_blocks_key(
       let blocks = case entry {
         ast.KeyValue(key: key, value: ast.InlineTable(..), ..) -> {
           let full_key = list.append(active_table, key_to_strings(key))
-          list_starts_with(target, full_key) && full_key != target
+          key_utils.starts_with(target, full_key) && full_key != target
         }
         _ -> False
       }
@@ -1705,22 +1856,13 @@ fn header_conflicts_with_new_key(
   let ast.Header(kind: kind, ..) = header
   let key = header_key(header)
   case kind {
-    ast.StandardTable -> target == key || list_starts_with(key, target)
+    ast.StandardTable -> target == key || key_utils.starts_with(key, target)
     ast.ArrayOfTablesHeader -> key_path_conflicts(key, target)
   }
 }
 
 fn key_path_conflicts(existing: List(String), target: List(String)) -> Bool {
-  list_starts_with(target, existing) || list_starts_with(existing, target)
-}
-
-fn list_starts_with(list_value: List(String), prefix: List(String)) -> Bool {
-  case list_value, prefix {
-    _, [] -> True
-    [value, ..rest_values], [prefix_value, ..rest_prefix] ->
-      value == prefix_value && list_starts_with(rest_values, rest_prefix)
-    _, _ -> False
-  }
+  key_utils.conflicts(existing, target)
 }
 
 fn new_key_value(key: String, value: ast.Value) -> ast.Entry {
@@ -1764,13 +1906,7 @@ fn header_is_standard_table(header: ast.Header) -> Bool {
 }
 
 fn key_to_strings(key: ast.Key) -> List(String) {
-  let ast.Key(segments) = key
-  list.map(segments, fn(segment) {
-    case segment {
-      ast.BareKeySegment(text) -> text
-      ast.QuotedKeySegment(value, source_text: _) -> value
-    }
-  })
+  key_utils.to_strings(key)
 }
 
 fn key_from_strings(segments: List(String)) -> ast.Key {
@@ -1778,7 +1914,7 @@ fn key_from_strings(segments: List(String)) -> ast.Key {
 }
 
 fn key_segment_from_string(segment: String) -> ast.KeySegment {
-  case is_bare_key(segment) {
+  case key_utils.is_bare_key(segment) {
     True -> ast.BareKeySegment(segment)
     False -> ast.QuotedKeySegment(segment, basic_string_repr(segment))
   }
@@ -1821,28 +1957,6 @@ fn validate_comment_codepoints(
       }
     }
   }
-}
-
-fn is_bare_key(segment: String) -> Bool {
-  string.length(segment) > 0
-  && all_bare_key_codepoints(string.to_utf_codepoints(segment))
-}
-
-fn all_bare_key_codepoints(codepoints: List(UtfCodepoint)) -> Bool {
-  case codepoints {
-    [] -> True
-    [codepoint, ..rest] ->
-      is_bare_key_codepoint(string.utf_codepoint_to_int(codepoint))
-      && all_bare_key_codepoints(rest)
-  }
-}
-
-fn is_bare_key_codepoint(codepoint: Int) -> Bool {
-  { codepoint >= 65 && codepoint <= 90 }
-  || { codepoint >= 97 && codepoint <= 122 }
-  || { codepoint >= 48 && codepoint <= 57 }
-  || codepoint == 45
-  || codepoint == 95
 }
 
 fn basic_string_repr(value: String) -> String {

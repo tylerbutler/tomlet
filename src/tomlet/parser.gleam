@@ -7,8 +7,10 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import tomlet/ast
+import tomlet/key as key_utils
 
 pub type ParseError {
   Unexpected(got: String, expected: ExpectedTokenKind, offset: Int)
@@ -114,7 +116,7 @@ fn parse_lines(
   case lines {
     [] -> Ok(ast.Table(entries: list.reverse(entries), header: None))
     [line, ..rest] -> {
-      let line_len = string.length(line) + 1
+      let line_len = string.byte_size(line) + 1
       case line == "" && rest == [] {
         True -> Ok(ast.Table(entries: list.reverse(entries), header: None))
         False ->
@@ -206,7 +208,8 @@ fn parse_lines(
                   }
                 }
                 ast.KeyValue(key: key, ..) -> {
-                  let full_key = list.append(active_table, key_to_strings(key))
+                  let full_key =
+                    list.append(active_table, key_utils.to_strings(key))
                   case
                     key_path_conflicts(seen, full_key)
                     || dotted_key_extends_defined_table(
@@ -284,7 +287,7 @@ fn parse_line(
                 string.starts_with(trimmed, "[[")
                 && string.ends_with(trimmed, "]]")
               {
-                True -> parse_table_array_header(trimmed, offset)
+                True -> parse_array_of_tables_header(trimmed, offset)
                 False ->
                   case
                     string.starts_with(trimmed, "[")
@@ -313,7 +316,7 @@ fn parse_table_header(
   parse_header(trimmed, 1, ast.StandardTable, offset)
 }
 
-fn parse_table_array_header(
+fn parse_array_of_tables_header(
   trimmed: String,
   offset: Int,
 ) -> Result(Option(ast.Entry), ParseError) {
@@ -356,7 +359,10 @@ fn parse_key_value(
       let key_text = string.trim(raw_key)
       let value_text = string.trim(strip_value_comments(raw_value))
       let value_offset =
-        offset + string.length(raw_key) + 1 + trim_start_offset(raw_value)
+        offset
+        + string.byte_size(raw_key)
+        + 1
+        + trim_start_byte_offset(raw_value)
       case parse_key(key_text) {
         Ok(key) ->
           case parse_value(value_text, value_offset) {
@@ -387,25 +393,9 @@ fn trailing_after_value(raw_value: String, value_text: String) -> String {
 }
 
 fn parse_key(text: String) -> Result(ast.Key, Nil) {
-  case parse_key_segments(split_key_segments_text(text), []) {
-    Ok(segments) -> Ok(ast.Key(segments))
-    Error(Nil) -> Error(Nil)
-  }
-}
-
-fn parse_key_segments(
-  segments: List(String),
-  parsed: List(ast.KeySegment),
-) -> Result(List(ast.KeySegment), Nil) {
-  case segments {
-    [] -> Ok(list.reverse(parsed))
-    [segment, ..rest] ->
-      case parse_key_segment(segment) {
-        Ok(parsed_segment) ->
-          parse_key_segments(rest, [parsed_segment, ..parsed])
-        Error(Nil) -> Error(Nil)
-      }
-  }
+  split_key_segments_text(text)
+  |> list.try_map(parse_key_segment)
+  |> result.map(ast.Key)
 }
 
 fn split_key_value(line: String) -> Result(#(String, String), Nil) {
@@ -478,7 +468,7 @@ fn split_key_segments_loop(
             rest,
             current <> "\"",
             segments,
-            bool_flip(in_basic),
+            !in_basic,
             in_literal,
           )
       }
@@ -498,7 +488,7 @@ fn split_key_segments_loop(
             current <> "'",
             segments,
             in_basic,
-            bool_flip(in_literal),
+            !in_literal,
           )
       }
     [char, ..rest] ->
@@ -557,7 +547,7 @@ fn split_key_value_loop(
             rest,
             key <> bool_pick(!found, "\"", ""),
             value <> bool_pick(found, "\"", ""),
-            bool_flip(in_basic),
+            !in_basic,
             in_literal,
             found,
           )
@@ -567,7 +557,7 @@ fn split_key_value_loop(
             key <> bool_pick(!found, "'", ""),
             value <> bool_pick(found, "'", ""),
             in_basic,
-            bool_flip(in_literal),
+            !in_literal,
             found,
           )
         _, False, _, _ ->
@@ -642,7 +632,7 @@ fn parse_key_segment(segment: String) -> Result(ast.KeySegment, Nil) {
                     || string.ends_with(trimmed, "\"")
                     || string.starts_with(trimmed, "'")
                     || string.ends_with(trimmed, "'")
-                    || !bare_key_chars_are_valid(string.to_graphemes(trimmed))
+                    || !key_utils.is_bare_key(trimmed)
                   {
                     True -> Error(Nil)
                     False -> Ok(ast.BareKeySegment(trimmed))
@@ -655,32 +645,22 @@ fn parse_key_segment(segment: String) -> Result(ast.KeySegment, Nil) {
 
 fn header_key(header: ast.Header) -> List(String) {
   let ast.Header(key: key, kind: _, trivia: _) = header
-  key_to_strings(key)
-}
-
-fn key_to_strings(key: ast.Key) -> List(String) {
-  let ast.Key(segments) = key
-  list.map(segments, fn(segment) {
-    case segment {
-      ast.BareKeySegment(text) -> text
-      ast.QuotedKeySegment(value, source_text: _) -> value
-    }
-  })
+  key_utils.to_strings(key)
 }
 
 fn remove_keys_under_table(
   seen: List(List(String)),
   table_key: List(String),
 ) -> List(List(String)) {
-  list.filter(seen, fn(key) { !list_starts_with(key, table_key) })
+  list.filter(seen, fn(key) { !key_utils.starts_with(key, table_key) })
 }
 
 fn key_path_conflicts(seen: List(List(String)), key: List(String)) -> Bool {
   case seen {
     [] -> False
     [existing, ..rest] ->
-      list_starts_with(existing, key)
-      || list_starts_with(key, existing)
+      key_utils.starts_with(existing, key)
+      || key_utils.starts_with(key, existing)
       || key_path_conflicts(rest, key)
   }
 }
@@ -693,7 +673,7 @@ fn key_path_conflicts_for_table_header(
     [] -> False
     [existing, ..rest] ->
       existing == key
-      || list_starts_with(key, existing)
+      || key_utils.starts_with(key, existing)
       || key_path_conflicts_for_table_header(rest, key)
   }
 }
@@ -755,7 +735,10 @@ fn dotted_key_extends_table(
   case table_paths {
     [] -> False
     [table, ..rest] ->
-      { list_starts_with(key, table) && !list_starts_with(active_table, table) }
+      {
+        key_utils.starts_with(key, table)
+        && !key_utils.starts_with(active_table, table)
+      }
       || dotted_key_extends_table(rest, active_table, key)
   }
 }
@@ -803,15 +786,6 @@ fn add_paths(paths: List(List(String)), existing: List(List(String))) {
         True -> add_paths(rest, existing)
         False -> add_paths(rest, [path, ..existing])
       }
-  }
-}
-
-fn list_starts_with(list_value: List(String), prefix: List(String)) -> Bool {
-  case list_value, prefix {
-    _, [] -> True
-    [value, ..rest_values], [prefix_value, ..rest_prefix] ->
-      value == prefix_value && list_starts_with(rest_values, rest_prefix)
-    _, _ -> False
   }
 }
 
@@ -884,7 +858,7 @@ fn split_top_level_commas_loop(
   case chars {
     [] ->
       list.reverse([
-        #(string.trim(current), current_start + trim_start_offset(current)),
+        #(string.trim(current), current_start + trim_start_byte_offset(current)),
         ..parts
       ])
     [char, ..rest] ->
@@ -920,11 +894,11 @@ fn split_top_level_commas_loop(
             in_basic,
             in_literal,
             "",
-            current_start + string.length(current) + 1,
+            current_start + string.byte_size(current) + 1,
             [
               #(
                 string.trim(current),
-                current_start + trim_start_offset(current),
+                current_start + trim_start_byte_offset(current),
               ),
               ..parts
             ],
@@ -933,7 +907,7 @@ fn split_top_level_commas_loop(
           split_top_level_commas_loop(
             rest,
             depth,
-            bool_flip(in_basic),
+            !in_basic,
             in_literal,
             current <> char,
             current_start,
@@ -944,7 +918,7 @@ fn split_top_level_commas_loop(
             rest,
             depth,
             in_basic,
-            bool_flip(in_literal),
+            !in_literal,
             current <> char,
             current_start,
             parts,
@@ -1007,6 +981,10 @@ fn trim_start_offset(text: String) -> Int {
   string.length(text) - string.length(string.trim_start(text))
 }
 
+fn trim_start_byte_offset(text: String) -> Int {
+  string.byte_size(text) - string.byte_size(string.trim_start(text))
+}
+
 fn brackets_are_balanced(text: String) -> Bool {
   bracket_depth(string.to_graphemes(text), 0, False, False) == 0
 }
@@ -1028,10 +1006,8 @@ fn bracket_depth(
               bracket_depth(after_escape, depth, in_basic, in_literal)
           }
         }
-        "\"", _, False ->
-          bracket_depth(rest, depth, bool_flip(in_basic), in_literal)
-        "'", False, _ ->
-          bracket_depth(rest, depth, in_basic, bool_flip(in_literal))
+        "\"", _, False -> bracket_depth(rest, depth, !in_basic, in_literal)
+        "'", False, _ -> bracket_depth(rest, depth, in_basic, !in_literal)
         "[", False, False ->
           bracket_depth(rest, depth + 1, in_basic, in_literal)
         "{", False, False ->
@@ -1168,19 +1144,9 @@ fn inline_table_newlines_are_valid_loop(
         False -> False
       }
     ["\"", ..rest] if !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth,
-        bool_flip(in_basic),
-        in_literal,
-      )
+      inline_table_newlines_are_valid_loop(rest, depth, !in_basic, in_literal)
     ["'", ..rest] if !in_basic ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth,
-        in_basic,
-        bool_flip(in_literal),
-      )
+      inline_table_newlines_are_valid_loop(rest, depth, in_basic, !in_literal)
     ["[", ..rest] if !in_basic && !in_literal ->
       inline_table_newlines_are_valid_loop(
         rest,
@@ -1230,7 +1196,7 @@ fn parse_inline_entries(
             Ok(#(raw_key, raw_value)) ->
               case parse_key(string.trim(raw_key)) {
                 Ok(key) -> {
-                  let key_path = key_to_strings(key)
+                  let key_path = key_utils.to_strings(key)
                   case key_path_conflicts(seen, key_path) {
                     True ->
                       Error(Unexpected(part, ExpectedSyntax, entry_offset))
@@ -1239,9 +1205,9 @@ fn parse_inline_entries(
                         parse_value(
                           string.trim(strip_inline_comments_by_line(raw_value)),
                           entry_offset
-                            + string.length(raw_key)
+                            + string.byte_size(raw_key)
                             + 1
-                            + trim_start_offset(raw_value),
+                            + trim_start_byte_offset(raw_value),
                         )
                       {
                         Ok(value) ->
@@ -1333,34 +1299,17 @@ fn strip_inline_comment_loop(
         True ->
           strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "\"")
         False ->
-          strip_inline_comment_loop(
-            rest,
-            bool_flip(in_basic),
-            in_literal,
-            acc <> "\"",
-          )
+          strip_inline_comment_loop(rest, !in_basic, in_literal, acc <> "\"")
       }
     ["'", ..rest] ->
       case in_basic {
         True ->
           strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "'")
         False ->
-          strip_inline_comment_loop(
-            rest,
-            in_basic,
-            bool_flip(in_literal),
-            acc <> "'",
-          )
+          strip_inline_comment_loop(rest, in_basic, !in_literal, acc <> "'")
       }
     [char, ..rest] ->
       strip_inline_comment_loop(rest, in_basic, in_literal, acc <> char)
-  }
-}
-
-fn bool_flip(value: Bool) -> Bool {
-  case value {
-    True -> False
-    False -> True
   }
 }
 
@@ -1740,22 +1689,6 @@ fn based_digit_value(char: String) -> Result(Int, Nil) {
   }
 }
 
-fn bare_key_chars_are_valid(chars: List(String)) -> Bool {
-  case chars {
-    [] -> True
-    [char, ..rest] ->
-      case
-        char_is_ascii_letter(char)
-        || char_is_digit(char)
-        || char == "-"
-        || char == "_"
-      {
-        True -> bare_key_chars_are_valid(rest)
-        False -> False
-      }
-  }
-}
-
 fn basic_string_content_is_valid(text: String) -> Bool {
   basic_string_chars_are_valid(string.to_graphemes(text))
 }
@@ -2093,64 +2026,6 @@ fn drop_sign(text: String) -> String {
   case string.starts_with(text, "+") || string.starts_with(text, "-") {
     True -> string.drop_start(text, 1)
     False -> text
-  }
-}
-
-fn char_is_ascii_letter(char: String) -> Bool {
-  case char {
-    "a"
-    | "b"
-    | "c"
-    | "d"
-    | "e"
-    | "f"
-    | "g"
-    | "h"
-    | "i"
-    | "j"
-    | "k"
-    | "l"
-    | "m"
-    | "n"
-    | "o"
-    | "p"
-    | "q"
-    | "r"
-    | "s"
-    | "t"
-    | "u"
-    | "v"
-    | "w"
-    | "x"
-    | "y"
-    | "z"
-    | "A"
-    | "B"
-    | "C"
-    | "D"
-    | "E"
-    | "F"
-    | "G"
-    | "H"
-    | "I"
-    | "J"
-    | "K"
-    | "L"
-    | "M"
-    | "N"
-    | "O"
-    | "P"
-    | "Q"
-    | "R"
-    | "S"
-    | "T"
-    | "U"
-    | "V"
-    | "W"
-    | "X"
-    | "Y"
-    | "Z" -> True
-    _ -> False
   }
 }
 

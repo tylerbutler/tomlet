@@ -47,7 +47,8 @@ let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
 Typed accessors include `get_string`, `get_int`, `get_bool`, `get_float`,
 `get_date`, `get_time`, and `get_datetime`. Use `get` when you need to inspect
 any TOML value through the public `tomlet.Value` type, including dates, times,
-arrays, inline tables, standard tables, and arrays of tables.
+arrays, inline tables, standard tables (`StandardTableValue`), and arrays of
+tables.
 
 ```gleam
 let assert Ok(doc) = tomlet.parse("released = 2026-05-25\n")
@@ -62,6 +63,10 @@ Inline table values are addressed with the same key path syntax:
 let assert Ok(doc) = tomlet.parse("pkg = { name = \"tomato\" }\n")
 let assert Ok(name) = tomlet.get_string(doc, ["pkg", "name"])
 ```
+
+Typed accessor mismatches return `WrongType(path, expected)`, where `expected`
+is a stable `ExpectedType` variant such as `ExpectedString`, `ExpectedInt`, or
+`ExpectedDateTime`.
 
 Parse errors use stable variants for machine handling. `InvalidSyntax` and
 `DuplicateKey` carry byte offsets; use `tomlet.line_column(input, offset)` when
@@ -84,6 +89,12 @@ The `set_*` helpers can replace existing values inside inline tables, such as
 existing inline table are reported as `InlineTableInsertUnsupported`; create
 those keys by rewriting the table shape explicitly rather than relying on
 implicit insertion.
+
+Structural read values that cannot be represented in a write context are
+rejected explicitly. For example, passing `StandardTableValue` or
+`ArrayOfTablesValue` to `set_array`, `set_inline_table`, or
+`append_array_of_tables` returns `Error(InvalidValue)` instead of silently
+flattening the table shape.
 
 ## Examples
 

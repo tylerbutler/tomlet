@@ -22,7 +22,7 @@ pub fn parse_basic_int_and_get_it_test() {
 
   assert tomlet.get_int(doc, ["answer"]) == Ok(42)
   assert tomlet.get_string(doc, ["answer"])
-    == Error(tomlet.WrongType(["answer"], "String"))
+    == Error(tomlet.WrongType(["answer"], tomlet.ExpectedString))
 }
 
 pub fn get_returns_public_scalar_values_test() {
@@ -128,11 +128,26 @@ pub fn get_returns_public_standard_table_values_test() {
 
   assert tomlet.get(doc, ["package"])
     == Ok(
-      tomlet.TableValue([
+      tomlet.StandardTableValue([
         #(["name"], tomlet.StringValue("tomato")),
         #(["version"], tomlet.StringValue("0.1.0")),
       ]),
     )
+}
+
+pub fn parse_error_offsets_use_original_bytes_after_crlf_test() {
+  assert tomlet.parse("ok = 1\r\nbad = ???\r\n")
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 14))
+}
+
+pub fn duplicate_key_offsets_use_original_bytes_after_crlf_test() {
+  assert tomlet.parse("name = \"one\"\r\nname = \"two\"\r\n")
+    == Error(tomlet.DuplicateKey(["name"], 14))
+}
+
+pub fn parse_error_offsets_count_utf8_bytes_test() {
+  assert tomlet.parse("name = \"é\"\nbad = ???\n")
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 18))
 }
 
 pub fn parse_bytes_accepts_valid_utf8_with_bom_test() {
@@ -648,7 +663,7 @@ pub fn get_date_reads_date_value_test() {
 pub fn get_date_wrong_type_test() {
   let assert Ok(doc) = tomlet.parse("released = \"1979-05-27\"\n")
   assert tomlet.get_date(doc, ["released"])
-    == Error(tomlet.WrongType(["released"], "Date"))
+    == Error(tomlet.WrongType(["released"], tomlet.ExpectedDate))
 }
 
 pub fn get_date_missing_test() {
@@ -666,7 +681,7 @@ pub fn get_time_reads_time_value_test() {
 pub fn get_time_wrong_type_test() {
   let assert Ok(doc) = tomlet.parse("alarm = 1\n")
   assert tomlet.get_time(doc, ["alarm"])
-    == Error(tomlet.WrongType(["alarm"], "Time"))
+    == Error(tomlet.WrongType(["alarm"], tomlet.ExpectedTime))
 }
 
 pub fn get_datetime_reads_datetime_value_test() {
@@ -678,7 +693,7 @@ pub fn get_datetime_reads_datetime_value_test() {
 pub fn get_datetime_wrong_type_test() {
   let assert Ok(doc) = tomlet.parse("timestamp = 1979-05-27\n")
   assert tomlet.get_datetime(doc, ["timestamp"])
-    == Error(tomlet.WrongType(["timestamp"], "DateTime"))
+    == Error(tomlet.WrongType(["timestamp"], tomlet.ExpectedDateTime))
 }
 
 // --- Issue #12: typed date/time/datetime setters ---
@@ -770,6 +785,20 @@ pub fn set_array_supports_nested_arrays_test() {
   assert tomlet.to_string(updated) == "matrix = [[1, 2], [3, 4]]\n"
 }
 
+pub fn set_array_rejects_standard_table_value_test() {
+  assert tomlet.set_array(tomlet.new(), ["items"], [
+      tomlet.StandardTableValue([#(["name"], tomlet.StringValue("tomato"))]),
+    ])
+    == Error(tomlet.InvalidValue)
+}
+
+pub fn set_array_rejects_array_of_tables_value_test() {
+  assert tomlet.set_array(tomlet.new(), ["items"], [
+      tomlet.ArrayOfTablesValue([[#(["name"], tomlet.StringValue("tomato"))]]),
+    ])
+    == Error(tomlet.InvalidValue)
+}
+
 pub fn set_array_empty_test() {
   let assert Ok(updated) = tomlet.set_array(tomlet.new(), ["xs"], [])
   assert tomlet.to_string(updated) == "xs = []\n"
@@ -793,6 +822,22 @@ pub fn set_inline_table_supports_dotted_keys_test() {
     ])
 
   assert tomlet.to_string(updated) == "pkg = { meta.downloads = 42 }\n"
+}
+
+pub fn set_inline_table_rejects_duplicate_entry_paths_test() {
+  assert tomlet.set_inline_table(tomlet.new(), ["pkg"], [
+      #(["name"], tomlet.StringValue("tomato")),
+      #(["name"], tomlet.StringValue("carrot")),
+    ])
+    == Error(tomlet.KeyConflict(["name"]))
+}
+
+pub fn set_inline_table_rejects_parent_child_entry_conflicts_test() {
+  assert tomlet.set_inline_table(tomlet.new(), ["pkg"], [
+      #(["metadata"], tomlet.StringValue("tomato")),
+      #(["metadata", "downloads"], tomlet.IntValue(42)),
+    ])
+    == Error(tomlet.KeyConflict(["metadata", "downloads"]))
 }
 
 pub fn set_inline_table_empty_test() {
@@ -826,4 +871,12 @@ pub fn append_array_of_tables_appends_to_existing_test() {
         [#(["name"], tomlet.StringValue("carrot"))],
       ]),
     )
+}
+
+pub fn append_array_of_tables_rejects_duplicate_entry_paths_test() {
+  assert tomlet.append_array_of_tables(tomlet.new(), ["packages"], [
+      #(["name"], tomlet.StringValue("tomato")),
+      #(["name"], tomlet.StringValue("carrot")),
+    ])
+    == Error(tomlet.KeyConflict(["name"]))
 }

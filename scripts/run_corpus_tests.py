@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -83,8 +84,15 @@ def run_invalid() -> None:
 
 
 def ensure_toml_test_repo() -> Path:
-    if not TOML_TEST_REPO.is_dir():
-        CACHE.mkdir(parents=True, exist_ok=True)
+    expected_file_list = TOML_TEST_REPO / "tests" / "files-toml-1.0.0"
+    if TOML_TEST_REPO.is_dir() and expected_file_list.is_file():
+        return TOML_TEST_REPO
+
+    if TOML_TEST_REPO.exists():
+        shutil.rmtree(TOML_TEST_REPO)
+
+    CACHE.mkdir(parents=True, exist_ok=True)
+    try:
         subprocess.run(
             [
                 "git",
@@ -99,6 +107,18 @@ def ensure_toml_test_repo() -> Path:
             cwd=ROOT,
             check=True,
         )
+    except subprocess.CalledProcessError:
+        if TOML_TEST_REPO.exists():
+            shutil.rmtree(TOML_TEST_REPO)
+        raise
+
+    if not expected_file_list.is_file():
+        shutil.rmtree(TOML_TEST_REPO)
+        raise SystemExit(
+            "toml-test checkout is missing tests/files-toml-1.0.0; "
+            "remove .toml-test and rerun corpus tests"
+        )
+
     return TOML_TEST_REPO
 
 
@@ -106,6 +126,8 @@ def load_toml_1_0_paths(repo: Path, kind: str) -> list[Path]:
     prefix = f"{kind}/"
     files = []
     file_list = repo / "tests" / "files-toml-1.0.0"
+    if not file_list.is_file():
+        raise SystemExit(f"missing TOML 1.0 corpus file list: {file_list}")
     for raw in file_list.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if raw.startswith(prefix) and raw.endswith(".toml"):
@@ -114,7 +136,6 @@ def load_toml_1_0_paths(repo: Path, kind: str) -> list[Path]:
 
 
 def write_valid_tests(repo: Path, files: list[Path], generated: Path) -> None:
-    valid_root = repo / "tests" / "valid"
     known_paths = {path.with_suffix("").relative_to("valid").as_posix() for path in files}
     assert_known_paths("ROUNDTRIP_UNSUPPORTED", ROUNDTRIP_UNSUPPORTED, known_paths)
 

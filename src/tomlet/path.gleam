@@ -6,6 +6,7 @@
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import tomlet/ast
+import tomlet/key as key_utils
 
 pub fn get(table: ast.Table, path: List(String)) -> Result(ast.Value, Nil) {
   let ast.Table(entries: entries, header: _) = table
@@ -25,14 +26,14 @@ fn scan_entries(
     [entry, ..rest] ->
       case entry {
         ast.TableHeader(ast.Header(key: key, kind: ast.StandardTable, trivia: _)) ->
-          scan_entries(rest, key_to_strings(key), target)
+          scan_entries(rest, key_utils.to_strings(key), target)
         ast.TableHeader(ast.Header(
           key: key,
           kind: ast.ArrayOfTablesHeader,
           trivia: _,
-        )) -> scan_entries(rest, key_to_strings(key), target)
+        )) -> scan_entries(rest, key_utils.to_strings(key), target)
         ast.KeyValue(key: key, value: value, ..) -> {
-          let full_key = list.append(active_table, key_to_strings(key))
+          let full_key = list.append(active_table, key_utils.to_strings(key))
           case full_key == target {
             True -> Ok(value)
             False ->
@@ -59,7 +60,7 @@ fn scan_inline_entries(
   case entries {
     [] -> Error(Nil)
     [ast.InlineTableEntry(key: key, value: value, ..), ..rest] -> {
-      let full_key = list.append(active_path, key_to_strings(key))
+      let full_key = list.append(active_path, key_utils.to_strings(key))
       case full_key == target {
         True -> Ok(value)
         False ->
@@ -100,7 +101,7 @@ fn collect_array_tables_loop(
             finish_array_table(current_header, current_entries, tables)
           case header {
             ast.Header(key: key, kind: ast.ArrayOfTablesHeader, trivia: _) -> {
-              case key_to_strings(key) == target {
+              case key_utils.to_strings(key) == target {
                 True ->
                   collect_array_tables_loop(
                     rest,
@@ -151,14 +152,4 @@ fn finish_array_table(
     ]
     None -> tables
   }
-}
-
-fn key_to_strings(key: ast.Key) -> List(String) {
-  let ast.Key(segments) = key
-  list.map(segments, fn(segment) {
-    case segment {
-      ast.BareKeySegment(text) -> text
-      ast.QuotedKeySegment(value, source_text: _) -> value
-    }
-  })
 }
