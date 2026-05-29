@@ -49,21 +49,29 @@ def main() -> int:
         default="all",
         help="Corpus suite to run.",
     )
+    parser.add_argument(
+        "--target",
+        choices=["erlang", "javascript", "all"],
+        default="all",
+        help="Gleam target(s) to run the corpus against.",
+    )
     args = parser.parse_args()
 
+    targets = ["erlang", "javascript"] if args.target == "all" else [args.target]
+
     if args.suite in {"valid", "all"}:
-        run_valid()
+        run_valid(targets)
     if args.suite in {"invalid", "all"}:
-        run_invalid()
+        run_invalid(targets)
     return 0
 
 
-def run_valid() -> None:
+def run_valid(targets: list[str]) -> None:
     repo = ensure_toml_test_repo()
     files = load_toml_1_0_paths(repo, "valid")
     write_valid_tests(repo, files, VALID_GENERATED)
     try:
-        run_gleam_targets()
+        run_gleam_targets(targets)
     finally:
         VALID_GENERATED.unlink(missing_ok=True)
     print(
@@ -72,12 +80,12 @@ def run_valid() -> None:
     )
 
 
-def run_invalid() -> None:
+def run_invalid(targets: list[str]) -> None:
     repo = ensure_toml_test_repo()
     files = load_toml_1_0_paths(repo, "invalid")
     write_invalid_tests(repo, files, INVALID_GENERATED)
     try:
-        run_gleam_targets()
+        run_gleam_targets(targets)
     finally:
         INVALID_GENERATED.unlink(missing_ok=True)
     print(f"toml-test invalid corpus checks succeeded from {repo / 'tests' / 'invalid'}")
@@ -245,9 +253,9 @@ def gleam_test_name(prefix: str, rel: str) -> str:
     return f"{prefix}_{suffix}_test"
 
 
-def run_gleam_targets() -> None:
-    subprocess.run(["gleam", "test", "--target", "erlang"], cwd=ROOT, check=True)
-    subprocess.run(["gleam", "test", "--target", "javascript"], cwd=ROOT, check=True)
+def run_gleam_targets(targets: list[str]) -> None:
+    for target in targets:
+        subprocess.run(["gleam", "test", "--target", target], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

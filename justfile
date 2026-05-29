@@ -11,25 +11,52 @@ alias c := clean
 default:
     @just --list
 
+# === DEPENDENCIES ===
+
+# Download project dependencies
+deps:
+    gleam deps download
+
 # === STANDARD RECIPES ===
 
-# Compile the project
+# Compile the project (Erlang target)
 build:
     gleam build
 
-# Run tests
+# Build with warnings as errors (Erlang target)
+build-strict:
+    gleam build --warnings-as-errors
+
+# Build with warnings as errors (JavaScript target)
+build-strict-js:
+    gleam build --target javascript --warnings-as-errors
+
+# Run tests on all targets
 # Includes the upstream TOML corpus checks.
-test:
-    gleam test
-    python3 scripts/run_corpus_tests.py
+test: test-erlang test-js
+
+# Run unit + corpus tests on the Erlang target
+test-erlang:
+    python3 scripts/run_corpus_tests.py --target erlang
+
+# Run unit + corpus tests on the JavaScript target
+test-js:
+    python3 scripts/run_corpus_tests.py --target javascript
 
 # Format code
 format:
     gleam format src test
 
-# Run linter
-lint:
+# Check formatting without making changes
+format-check:
     gleam format --check src test
+
+# Type check without building
+check:
+    gleam check
+
+# Run linter (alias for format-check)
+lint: format-check
 
 # Remove build artifacts
 clean:
@@ -55,8 +82,10 @@ changelog:
 docs:
     gleam docs build
 
+# === CI ===
+
 # Full validation workflow
-ci: format lint test build docs
+ci: format-check check test build-strict build-strict-js docs
 
 alias pr := ci
 alias cl := change
