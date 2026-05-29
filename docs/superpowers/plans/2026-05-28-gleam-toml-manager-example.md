@@ -47,6 +47,7 @@
 | `src/gleam_toml_manager/commands.gleam` | Pure domain fns over `Document` (the tomlet showcase) + `value_to_display`. |
 | `src/gleam_toml_manager.gleam` | glint wiring, IO helpers, exit codes (`shellout.exit`), `main`. |
 | `test/semver_test.gleam` | semver unit tests. |
+| `test/app_error_test.gleam` | Error message rendering tests. |
 | `test/commands_test.gleam` | Round-trip + comment-preservation tests. |
 
 All `src/` and `test/` paths above are relative to `examples/gleam_toml_manager/`.
@@ -1048,7 +1049,7 @@ Expected: both builds succeed.
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run --target erlang -- bump minor --file sample.gleam.toml --dry-run
+cd examples/gleam_toml_manager && gleam run --target erlang -- bump minor --file=sample.gleam.toml --dry-run
 ```
 
 Expected: the printed TOML shows `version = "1.3.0"`, a new `# bumped to 1.3.0 by gleam_toml_manager` line above it, and the original `# Project metadata` / `# keep this in sync...` comments intact.
@@ -1058,7 +1059,7 @@ Expected: the printed TOML shows `version = "1.3.0"`, a new `# bumped to 1.3.0 b
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run --target javascript -- get dependencies.gleam_stdlib --file sample.gleam.toml
+cd examples/gleam_toml_manager && gleam run --target javascript -- get dependencies.gleam_stdlib --file=sample.gleam.toml
 ```
 
 Expected: prints `>= 0.44.0 and < 2.0.0`.
@@ -1068,7 +1069,7 @@ Expected: prints `>= 0.44.0 and < 2.0.0`.
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run -- remove-dep nope --file sample.gleam.toml --dry-run; echo "exit=$?"
+cd examples/gleam_toml_manager && gleam run -- remove-dep nope --file=sample.gleam.toml --dry-run; echo "exit=$?"
 ```
 
 Expected: stderr shows `edit error: key not found: dependencies.nope`, `sample.gleam.toml` is unchanged, and the final line is `exit=1`.
@@ -1080,7 +1081,7 @@ Expected: stderr shows `edit error: key not found: dependencies.nope`, `sample.g
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run -- get name --file sample.gleam.toml; echo "exit=$?"
+cd examples/gleam_toml_manager && gleam run -- get name --file=sample.gleam.toml; echo "exit=$?"
 ```
 
 Expected: prints `demo_app` then `exit=0`.
@@ -1119,12 +1120,12 @@ tomlet's API is dual-target. This project depends on `tomlet` via a local path
 From this directory:
 
 ```sh
-gleam run -- <command> [args] [--file PATH] [--dry-run]
+gleam run -- <command> <args> [--file=PATH] [--dry-run]
 ```
 
 `--file` defaults to `gleam.toml`. Use `--dry-run` to print the result instead
 of writing the file. Select a target with `--target erlang` (default) or
-`--target javascript`.
+`--target javascript`. Flags use glint's `--name=value` syntax.
 
 ## Commands
 
@@ -1141,23 +1142,30 @@ of writing the file. Select a target with `--target erlang` (default) or
 Given the bundled `sample.gleam.toml`:
 
 ```sh
-gleam run -- bump minor --file sample.gleam.toml --dry-run
+gleam run -- bump minor --file=sample.gleam.toml --dry-run
 ```
 
 prints (note the preserved comments and the new annotation):
 
 ```toml
-# Project metadata
+# Project metadata for the demo
 name = "demo_app"
 # bumped to 1.3.0 by gleam_toml_manager
-version = "1.3.0"  # current
-...
+version = "1.3.0"  # keep this in sync with the changelog
+
+# Dependencies are listed below
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"  # standard library
+gleam_json = ">= 2.0.0 and < 3.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
 ```
 
 Run the same thing on the JavaScript target:
 
 ```sh
-gleam run --target javascript -- bump minor --file sample.gleam.toml --dry-run
+gleam run --target javascript -- bump minor --file=sample.gleam.toml --dry-run
 ```
 
 ## Exit codes
@@ -1167,7 +1175,7 @@ missing key, bad version, …), printing the reason to stderr. Exit codes work o
 both targets via `shellout.exit`, so the tool is safe to use in scripts and CI:
 
 ```sh
-gleam run -- bump minor --file gleam.toml || echo "bump failed"
+gleam run -- bump minor --file=gleam.toml || echo "bump failed"
 ```
 
 ## Test
@@ -1177,10 +1185,6 @@ gleam test                       # Erlang target
 gleam test --target javascript   # JavaScript target
 ```
 ```
-
-> Note: the exact trailing comment on `version` in the example output depends on
-> the fixture; reproduce the real output by running the command before
-> finalizing the README if it differs.
 
 - [ ] **Step 2: Run the full test suite on both targets**
 
@@ -1197,7 +1201,7 @@ Expected: PASS on both targets.
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run -- bump minor --file sample.gleam.toml --dry-run
+cd examples/gleam_toml_manager && gleam run -- bump minor --file=sample.gleam.toml --dry-run
 ```
 
 Expected: output matches the README's example block. If the trailing comment differs, update the README block to match.

@@ -59,7 +59,7 @@ the star of the show rather than burying it in plumbing.
 
 Every command takes a shared `--file` flag (default `gleam.toml`) and a
 `--dry-run` flag (print the resulting document to stdout instead of writing it
-back). (glint's flag model uses `--name`; no short aliases.)
+back). (glint's flag model uses `--name=value` syntax; no short aliases.)
 
 | Command | tomlet API exercised |
 |---|---|
