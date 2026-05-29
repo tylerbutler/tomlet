@@ -9,6 +9,7 @@ glint = ">= 1.2.1 and < 2.0.0"
 argv = ">= 1.1.0 and < 2.0.0"
 simplifile = ">= 2.4.0 and < 3.0.0"
 shellout = ">= 1.8.0 and < 2.0.0"
+gleamsver = ">= 1.0.1 and < 2.0.0"
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
