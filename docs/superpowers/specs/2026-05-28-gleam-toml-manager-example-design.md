@@ -54,16 +54,16 @@ the star of the show rather than burying it in plumbing.
 
 ## Subcommands → tomlet API mapping
 
-Every command takes a shared `--file`/`-f` flag (default `gleam.toml`) and a
+Every command takes a shared `--file` flag (default `gleam.toml`) and a
 `--dry-run` flag (print the resulting document to stdout instead of writing it
-back).
+back). (glint's flag model uses `--name`; no short aliases.)
 
 | Command | tomlet API exercised |
 |---|---|
-| `bump <major\|minor\|patch>` | `get_string(["version"])` → parse semver → `set_string(["version"], new)` → `insert_comment_before(["version"], "bumped to <new> by gleam_toml_manager")`. The headline "edit without nuking comments" demo. Surfaces `MissingKey`/`WrongType` when `version` is absent or non-string. |
+| `bump <major\|minor\|patch>` | `get_string(["version"])` → parse semver → `set_string(["version"], new)` → `insert_comment_before(["version"], "bumped to <new> by gleam_toml_manager")`. The headline "edit without nuking comments" demo. Surfaces `KeyNotFound`/`WrongType` when `version` is absent or non-string. |
 | `add-dep <name> <version>` | `set_string(["dependencies", name], version)` — nested-path edit that creates the `[dependencies]` standard table when absent and emits a new bare/quoted key. |
-| `remove-dep <name>` | `remove(["dependencies", name])` — checked delete with a friendly `MissingKey` message. |
-| `get <dotted.path>` | `get(path)` (path split on `.`) → render the returned `tomlet.Value` for display. Read-only; never writes. Surfaces `WrongType`/`MissingKey`. |
+| `remove-dep <name>` | `remove(["dependencies", name])` — checked delete with a friendly `MissingEditKey` message. |
+| `get <dotted.path>` | `get(path)` (path split on `.`) → render the returned `tomlet.Value` for display. Read-only; never writes. Surfaces `WrongType`/`KeyNotFound`. |
 | `set <dotted.path> <value>` | `set_string(path, value)` over an arbitrary dotted path. String-typed by default (documented limitation of the demo). |
 
 ### bump annotation detail
@@ -93,14 +93,16 @@ A single `AppError` type wraps every failure source:
 - `simplifile` IO errors (file not found, permission denied, …)
 - tomlet `ParseError` (with `line_column` rendering for syntax/duplicate-key
   errors)
-- tomlet `GetError` (`MissingKey`, `WrongType` with its `ExpectedType`)
+- tomlet `GetError` (`KeyNotFound`, `WrongType` with its `ExpectedType`)
 - tomlet `EditError` (invalid path, key conflict, missing key, unsafe comment)
 - semver parse failures (e.g. a `version` that isn't `N.N.N`)
 
 `app_error.to_message` renders each variant to a clear one-line message printed
-to **stderr**, and the process exits non-zero. No silent fallbacks: e.g. running
-`bump` against a missing or non-string `version` reports exactly that rather
-than guessing.
+to **stderr** via `io.println_error`. No silent fallbacks: e.g. running `bump`
+against a missing or non-string `version` reports exactly that rather than
+guessing. (A non-zero exit code is intentionally omitted — it would require
+per-target FFI, which is out of proportion for an example; the error message is
+the contract.)
 
 ## Testing strategy
 
@@ -113,7 +115,7 @@ The pure `commands` and `semver` modules are tested with no filesystem:
   major bump), and the annotation comment appears, while unrelated comments and
   keys are byte-for-byte unchanged.
 - `add-dep` / `remove-dep`: assert the dependency table mutates correctly and
-  surrounding entries are untouched; assert `MissingKey` on removing an absent
+  surrounding entries are untouched; assert `MissingEditKey` on removing an absent
   dep.
 - `semver`: parse/bump edge cases and rejection of malformed input.
 
