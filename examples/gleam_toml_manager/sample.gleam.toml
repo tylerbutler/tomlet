@@ -1,0 +1,11 @@
+# Project metadata for the demo
+name = "demo_app"
+version = "1.2.3"  # keep this in sync with the changelog
+
+# Dependencies are listed below
+[dependencies]
+gleam_stdlib = ">= 0.44.0 and < 2.0.0"  # standard library
+gleam_json = ">= 2.0.0 and < 3.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
