@@ -32,7 +32,7 @@ pub fn is_bare_key(segment: String) -> Bool {
   && all_bare_key_codepoints(string.to_utf_codepoints(segment))
 }
 
-pub fn is_bare_key_codepoint(codepoint: Int) -> Bool {
+fn is_bare_key_codepoint(codepoint: Int) -> Bool {
   { codepoint >= 65 && codepoint <= 90 }
   || { codepoint >= 97 && codepoint <= 122 }
   || { codepoint >= 48 && codepoint <= 57 }

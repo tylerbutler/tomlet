@@ -3,6 +3,7 @@
 //// This module may change without notice. Use the top-level `tomlet` module
 //// for supported parsing, reading, editing, and writing APIs.
 
+import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -57,15 +58,14 @@ fn merge_multiline_lines(
 }
 
 fn line_needs_more_lines(line: String) -> Bool {
-  case starts_multiline_value(line) && !multiline_is_closed(line) {
-    True -> True
-    False -> {
-      let value = line_value_text(line)
-      case value {
-        "" -> False
-        _ -> !brackets_are_balanced(strip_inline_comments_by_line(value))
-      }
-    }
+  use <- bool.guard(
+    when: starts_multiline_value(line) && !multiline_is_closed(line),
+    return: True,
+  )
+  let value = line_value_text(line)
+  case value {
+    "" -> False
+    _ -> !brackets_are_balanced(strip_inline_comments_by_line(value))
   }
 }
 
@@ -117,11 +117,55 @@ fn parse_lines(
     [] -> Ok(ast.Table(entries: list.reverse(entries), header: None))
     [line, ..rest] -> {
       let line_len = string.byte_size(line) + 1
-      case line == "" && rest == [] {
-        True -> Ok(ast.Table(entries: list.reverse(entries), header: None))
-        False ->
-          case parse_line(line, offset) {
-            Ok(None) ->
+      use <- bool.guard(
+        when: line == "" && rest == [],
+        return: Ok(ast.Table(entries: list.reverse(entries), header: None)),
+      )
+      case parse_line(line, offset) {
+        Ok(None) ->
+          parse_lines(
+            rest,
+            offset + line_len,
+            active_table,
+            seen,
+            explicit_tables,
+            array_tables,
+            array_table_parents,
+            dotted_tables,
+            entries,
+          )
+        Ok(Some(entry)) ->
+          case entry {
+            ast.TableHeader(header) ->
+              apply_table_header(
+                header,
+                entry,
+                rest,
+                offset,
+                line_len,
+                seen,
+                explicit_tables,
+                array_tables,
+                array_table_parents,
+                dotted_tables,
+                entries,
+              )
+            ast.KeyValue(key: key, ..) ->
+              apply_key_value(
+                key,
+                entry,
+                rest,
+                offset,
+                line_len,
+                active_table,
+                seen,
+                explicit_tables,
+                array_tables,
+                array_table_parents,
+                dotted_tables,
+                entries,
+              )
+            _ ->
               parse_lines(
                 rest,
                 offset + line_len,
@@ -131,181 +175,166 @@ fn parse_lines(
                 array_tables,
                 array_table_parents,
                 dotted_tables,
-                entries,
+                [entry, ..entries],
               )
-            Ok(Some(entry)) ->
-              case entry {
-                ast.TableHeader(header) -> {
-                  let table_key = header_key(header)
-                  case
-                    key_path_conflicts_for_table_header(seen, table_key)
-                    || list.contains(dotted_tables, table_key)
-                    || standard_table_already_defined(
-                      header,
-                      explicit_tables,
-                      table_key,
-                    )
-                    || table_kind_already_defined(
-                      header,
-                      explicit_tables,
-                      array_tables,
-                      table_key,
-                    )
-                    || array_table_parent_already_implied(
-                      header,
-                      array_tables,
-                      array_table_parents,
-                      table_key,
-                    )
-                  {
-                    True -> Error(KeyAlreadyInUse(table_key, offset))
-                    False -> {
-                      let next_seen = case header {
-                        ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-                          remove_keys_under_table(seen, table_key)
-                        _ -> seen
-                      }
-                      let next_explicit_tables = case header {
-                        ast.Header(kind: ast.StandardTable, ..) -> [
-                          table_key,
-                          ..explicit_tables
-                        ]
-                        ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-                          remove_keys_under_table(explicit_tables, table_key)
-                      }
-                      let next_dotted_tables_after_header = case header {
-                        ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-                          remove_keys_under_table(dotted_tables, table_key)
-                        _ -> dotted_tables
-                      }
-                      let next_array_tables = case header {
-                        ast.Header(kind: ast.ArrayOfTablesHeader, ..) -> [
-                          table_key,
-                          ..array_tables
-                        ]
-                        _ -> array_tables
-                      }
-                      let next_array_table_parents = case header {
-                        ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-                          add_paths(
-                            dotted_table_paths([], table_key),
-                            array_table_parents,
-                          )
-                        _ -> array_table_parents
-                      }
-                      parse_lines(
-                        rest,
-                        offset + line_len,
-                        table_key,
-                        next_seen,
-                        next_explicit_tables,
-                        next_array_tables,
-                        next_array_table_parents,
-                        next_dotted_tables_after_header,
-                        [entry, ..entries],
-                      )
-                    }
-                  }
-                }
-                ast.KeyValue(key: key, ..) -> {
-                  let full_key =
-                    list.append(active_table, key_utils.to_strings(key))
-                  case
-                    key_path_conflicts(seen, full_key)
-                    || dotted_key_extends_defined_table(
-                      explicit_tables,
-                      array_tables,
-                      active_table,
-                      full_key,
-                    )
-                  {
-                    True -> Error(KeyAlreadyInUse(full_key, offset))
-                    False -> {
-                      let next_dotted_tables =
-                        add_dotted_table_paths(
-                          dotted_tables,
-                          active_table,
-                          full_key,
-                        )
-                      parse_lines(
-                        rest,
-                        offset + line_len,
-                        active_table,
-                        [full_key, ..seen],
-                        explicit_tables,
-                        array_tables,
-                        array_table_parents,
-                        next_dotted_tables,
-                        [entry, ..entries],
-                      )
-                    }
-                  }
-                }
-                _ ->
-                  parse_lines(
-                    rest,
-                    offset + line_len,
-                    active_table,
-                    seen,
-                    explicit_tables,
-                    array_tables,
-                    array_table_parents,
-                    dotted_tables,
-                    [entry, ..entries],
-                  )
-              }
-            Error(error) -> Error(error)
           }
+        Error(error) -> Error(error)
       }
     }
   }
+}
+
+fn apply_table_header(
+  header: ast.Header,
+  entry: ast.Entry,
+  rest: List(String),
+  offset: Int,
+  line_len: Int,
+  seen: List(List(String)),
+  explicit_tables: List(List(String)),
+  array_tables: List(List(String)),
+  array_table_parents: List(List(String)),
+  dotted_tables: List(List(String)),
+  entries: List(ast.Entry),
+) -> Result(ast.Table, ParseError) {
+  let table_key = header_key(header)
+  use <- bool.guard(
+    when: key_path_conflicts_for_table_header(seen, table_key)
+      || list.contains(dotted_tables, table_key)
+      || standard_table_already_defined(header, explicit_tables, table_key)
+      || table_kind_already_defined(
+      header,
+      explicit_tables,
+      array_tables,
+      table_key,
+    )
+      || array_table_parent_already_implied(
+      header,
+      array_tables,
+      array_table_parents,
+      table_key,
+    ),
+    return: Error(KeyAlreadyInUse(table_key, offset)),
+  )
+  let next_seen = case header {
+    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
+      remove_keys_under_table(seen, table_key)
+    _ -> seen
+  }
+  let next_explicit_tables = case header {
+    ast.Header(kind: ast.StandardTable, ..) -> [table_key, ..explicit_tables]
+    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
+      remove_keys_under_table(explicit_tables, table_key)
+  }
+  let next_dotted_tables_after_header = case header {
+    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
+      remove_keys_under_table(dotted_tables, table_key)
+    _ -> dotted_tables
+  }
+  let next_array_tables = case header {
+    ast.Header(kind: ast.ArrayOfTablesHeader, ..) -> [table_key, ..array_tables]
+    _ -> array_tables
+  }
+  let next_array_table_parents = case header {
+    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
+      add_paths(dotted_table_paths([], table_key), array_table_parents)
+    _ -> array_table_parents
+  }
+  parse_lines(
+    rest,
+    offset + line_len,
+    table_key,
+    next_seen,
+    next_explicit_tables,
+    next_array_tables,
+    next_array_table_parents,
+    next_dotted_tables_after_header,
+    [entry, ..entries],
+  )
+}
+
+fn apply_key_value(
+  key: ast.Key,
+  entry: ast.Entry,
+  rest: List(String),
+  offset: Int,
+  line_len: Int,
+  active_table: List(String),
+  seen: List(List(String)),
+  explicit_tables: List(List(String)),
+  array_tables: List(List(String)),
+  array_table_parents: List(List(String)),
+  dotted_tables: List(List(String)),
+  entries: List(ast.Entry),
+) -> Result(ast.Table, ParseError) {
+  let full_key = list.append(active_table, key_utils.to_strings(key))
+  use <- bool.guard(
+    when: key_path_conflicts(seen, full_key)
+      || dotted_key_extends_defined_table(
+      explicit_tables,
+      array_tables,
+      active_table,
+      full_key,
+    ),
+    return: Error(KeyAlreadyInUse(full_key, offset)),
+  )
+  let next_dotted_tables =
+    add_dotted_table_paths(dotted_tables, active_table, full_key)
+  parse_lines(
+    rest,
+    offset + line_len,
+    active_table,
+    [full_key, ..seen],
+    explicit_tables,
+    array_tables,
+    array_table_parents,
+    next_dotted_tables,
+    [entry, ..entries],
+  )
 }
 
 fn parse_line(
   line: String,
   offset: Int,
 ) -> Result(Option(ast.Entry), ParseError) {
-  case
-    string_contains_disallowed_control(line)
-    || string_contains_disallowed_unquoted_unicode(line)
-  {
-    True -> Error(Unexpected(line, ExpectedSyntax, offset))
-    False -> {
-      let trimmed_line = string.trim(line)
-      let trimmed = string.trim(strip_inline_comment(line))
-      case trimmed {
-        "" ->
-          case string.starts_with(trimmed_line, "#") {
-            True -> Ok(Some(ast.Comment(line)))
-            False -> Ok(Some(ast.BlankLine))
-          }
-        _ -> {
-          case string.starts_with(trimmed_line, "#") {
-            True -> Ok(Some(ast.Comment(line)))
-            False ->
-              case
-                string.starts_with(trimmed, "[[")
-                && string.ends_with(trimmed, "]]")
-              {
-                True -> parse_array_of_tables_header(trimmed, offset)
-                False ->
-                  case
-                    string.starts_with(trimmed, "[")
-                    && string.ends_with(trimmed, "]")
-                  {
-                    True -> parse_table_header(trimmed, offset)
-                    False ->
-                      case string.starts_with(trimmed, "[") {
-                        True ->
-                          Error(Unexpected(trimmed, ExpectedTableHeader, offset))
-                        False -> parse_key_value(line, offset)
-                      }
-                  }
-              }
-          }
-        }
+  use <- bool.guard(
+    when: string_contains_disallowed_control(line)
+      || string_contains_disallowed_unquoted_unicode(line),
+    return: Error(Unexpected(line, ExpectedSyntax, offset)),
+  )
+  let trimmed_line = string.trim(line)
+  let trimmed = string.trim(strip_inline_comment(line))
+  case trimmed {
+    "" ->
+      case string.starts_with(trimmed_line, "#") {
+        True -> Ok(Some(ast.Comment(line)))
+        False -> Ok(Some(ast.BlankLine))
       }
-    }
+    _ -> classify_content_line(line, trimmed_line, trimmed, offset)
+  }
+}
+
+fn classify_content_line(
+  line: String,
+  trimmed_line: String,
+  trimmed: String,
+  offset: Int,
+) -> Result(Option(ast.Entry), ParseError) {
+  use <- bool.guard(
+    when: string.starts_with(trimmed_line, "#"),
+    return: Ok(Some(ast.Comment(line))),
+  )
+  case string.starts_with(trimmed, "[[") && string.ends_with(trimmed, "]]") {
+    True -> parse_array_of_tables_header(trimmed, offset)
+    False ->
+      case string.starts_with(trimmed, "[") && string.ends_with(trimmed, "]") {
+        True -> parse_table_header(trimmed, offset)
+        False ->
+          case string.starts_with(trimmed, "[") {
+            True -> Error(Unexpected(trimmed, ExpectedTableHeader, offset))
+            False -> parse_key_value(line, offset)
+          }
+      }
   }
 }
 
@@ -450,58 +479,57 @@ fn scan_value_span(
   depth: Int,
   count: Int,
 ) -> Int {
-  case count > 0 && state == SpanOutside && depth == 0 {
-    True -> count
-    False ->
-      case state, chars {
-        _, [] -> count
+  use <- bool.guard(
+    when: count > 0 && state == SpanOutside && depth == 0,
+    return: count,
+  )
+  case state, chars {
+    _, [] -> count
 
-        SpanOutside, ["\"", "\"", "\"", ..rest] ->
-          scan_value_span(rest, SpanMultiBasic, depth, count + 3)
-        SpanOutside, ["'", "'", "'", ..rest] ->
-          scan_value_span(rest, SpanMultiLiteral, depth, count + 3)
-        SpanOutside, ["\"", ..rest] ->
-          scan_value_span(rest, SpanBasic, depth, count + 1)
-        SpanOutside, ["'", ..rest] ->
-          scan_value_span(rest, SpanLiteral, depth, count + 1)
-        SpanOutside, ["#", ..rest] ->
-          scan_value_span(rest, SpanComment, depth, count + 1)
-        SpanOutside, ["[", ..rest] | SpanOutside, ["{", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth + 1, count + 1)
-        SpanOutside, ["]", ..rest] | SpanOutside, ["}", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth - 1, count + 1)
-        SpanOutside, [_, ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 1)
+    SpanOutside, ["\"", "\"", "\"", ..rest] ->
+      scan_value_span(rest, SpanMultiBasic, depth, count + 3)
+    SpanOutside, ["'", "'", "'", ..rest] ->
+      scan_value_span(rest, SpanMultiLiteral, depth, count + 3)
+    SpanOutside, ["\"", ..rest] ->
+      scan_value_span(rest, SpanBasic, depth, count + 1)
+    SpanOutside, ["'", ..rest] ->
+      scan_value_span(rest, SpanLiteral, depth, count + 1)
+    SpanOutside, ["#", ..rest] ->
+      scan_value_span(rest, SpanComment, depth, count + 1)
+    SpanOutside, ["[", ..rest] | SpanOutside, ["{", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth + 1, count + 1)
+    SpanOutside, ["]", ..rest] | SpanOutside, ["}", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth - 1, count + 1)
+    SpanOutside, [_, ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 1)
 
-        SpanComment, ["\n", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 1)
-        SpanComment, [_, ..rest] ->
-          scan_value_span(rest, SpanComment, depth, count + 1)
+    SpanComment, ["\n", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 1)
+    SpanComment, [_, ..rest] ->
+      scan_value_span(rest, SpanComment, depth, count + 1)
 
-        SpanBasic, ["\\", _, ..rest] ->
-          scan_value_span(rest, SpanBasic, depth, count + 2)
-        SpanBasic, ["\"", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 1)
-        SpanBasic, [_, ..rest] ->
-          scan_value_span(rest, SpanBasic, depth, count + 1)
+    SpanBasic, ["\\", _, ..rest] ->
+      scan_value_span(rest, SpanBasic, depth, count + 2)
+    SpanBasic, ["\"", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 1)
+    SpanBasic, [_, ..rest] -> scan_value_span(rest, SpanBasic, depth, count + 1)
 
-        SpanLiteral, ["'", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 1)
-        SpanLiteral, [_, ..rest] ->
-          scan_value_span(rest, SpanLiteral, depth, count + 1)
+    SpanLiteral, ["'", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 1)
+    SpanLiteral, [_, ..rest] ->
+      scan_value_span(rest, SpanLiteral, depth, count + 1)
 
-        SpanMultiBasic, ["\\", _, ..rest] ->
-          scan_value_span(rest, SpanMultiBasic, depth, count + 2)
-        SpanMultiBasic, ["\"", "\"", "\"", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 3)
-        SpanMultiBasic, [_, ..rest] ->
-          scan_value_span(rest, SpanMultiBasic, depth, count + 1)
+    SpanMultiBasic, ["\\", _, ..rest] ->
+      scan_value_span(rest, SpanMultiBasic, depth, count + 2)
+    SpanMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 3)
+    SpanMultiBasic, [_, ..rest] ->
+      scan_value_span(rest, SpanMultiBasic, depth, count + 1)
 
-        SpanMultiLiteral, ["'", "'", "'", ..rest] ->
-          scan_value_span(rest, SpanOutside, depth, count + 3)
-        SpanMultiLiteral, [_, ..rest] ->
-          scan_value_span(rest, SpanMultiLiteral, depth, count + 1)
-      }
+    SpanMultiLiteral, ["'", "'", "'", ..rest] ->
+      scan_value_span(rest, SpanOutside, depth, count + 3)
+    SpanMultiLiteral, [_, ..rest] ->
+      scan_value_span(rest, SpanMultiLiteral, depth, count + 1)
   }
 }
 
@@ -696,61 +724,55 @@ fn split_key_value_loop(
 }
 
 fn bool_pick(condition: Bool, yes: String, no: String) -> String {
-  case condition {
-    True -> yes
-    False -> no
-  }
+  use <- bool.guard(when: condition, return: yes)
+  no
 }
 
 fn parse_key_segment(segment: String) -> Result(ast.KeySegment, Nil) {
   let trimmed = string.trim(segment)
-  case trimmed {
-    "" -> Error(Nil)
-    _ ->
-      case string_is_multiline_delimited(trimmed) {
-        True -> Error(Nil)
+  use <- bool.guard(when: trimmed == "", return: Error(Nil))
+  use <- bool.guard(
+    when: string_is_multiline_delimited(trimmed),
+    return: Error(Nil),
+  )
+  case
+    string.starts_with(trimmed, "\"")
+    && string.ends_with(trimmed, "\"")
+    && string.length(trimmed) > 1
+  {
+    True -> {
+      let inner =
+        trimmed
+        |> string.drop_start(1)
+        |> string.drop_end(1)
+      case basic_string_content_is_valid(inner) {
+        True -> Ok(ast.QuotedKeySegment(basic_key_value(inner), trimmed))
+        False -> Error(Nil)
+      }
+    }
+    False ->
+      case
+        string.starts_with(trimmed, "'")
+        && string.ends_with(trimmed, "'")
+        && string.length(trimmed) > 1
+      {
+        True ->
+          Ok(ast.QuotedKeySegment(
+            trimmed
+              |> string.drop_start(1)
+              |> string.drop_end(1),
+            trimmed,
+          ))
         False ->
           case
             string.starts_with(trimmed, "\"")
-            && string.ends_with(trimmed, "\"")
-            && string.length(trimmed) > 1
+            || string.ends_with(trimmed, "\"")
+            || string.starts_with(trimmed, "'")
+            || string.ends_with(trimmed, "'")
+            || !key_utils.is_bare_key(trimmed)
           {
-            True -> {
-              let inner =
-                trimmed
-                |> string.drop_start(1)
-                |> string.drop_end(1)
-              case basic_string_content_is_valid(inner) {
-                True ->
-                  Ok(ast.QuotedKeySegment(basic_key_value(inner), trimmed))
-                False -> Error(Nil)
-              }
-            }
-            False ->
-              case
-                string.starts_with(trimmed, "'")
-                && string.ends_with(trimmed, "'")
-                && string.length(trimmed) > 1
-              {
-                True ->
-                  Ok(ast.QuotedKeySegment(
-                    trimmed
-                      |> string.drop_start(1)
-                      |> string.drop_end(1),
-                    trimmed,
-                  ))
-                False ->
-                  case
-                    string.starts_with(trimmed, "\"")
-                    || string.ends_with(trimmed, "\"")
-                    || string.starts_with(trimmed, "'")
-                    || string.ends_with(trimmed, "'")
-                    || !key_utils.is_bare_key(trimmed)
-                  {
-                    True -> Error(Nil)
-                    False -> Ok(ast.BareKeySegment(trimmed))
-                  }
-              }
+            True -> Error(Nil)
+            False -> Ok(ast.BareKeySegment(trimmed))
           }
       }
   }
@@ -891,7 +913,10 @@ fn dotted_table_paths_loop(
   }
 }
 
-fn add_paths(paths: List(List(String)), existing: List(List(String))) {
+fn add_paths(
+  paths: List(List(String)),
+  existing: List(List(String)),
+) -> List(List(String)) {
   case paths {
     [] -> existing
     [path, ..rest] ->
@@ -917,33 +942,18 @@ fn parse_scalar_value(
   text: String,
   offset: Int,
 ) -> Result(ast.Value, ParseError) {
-  case parse_multiline_basic_string(text) {
+  let parsers = [
+    parse_multiline_basic_string,
+    parse_multiline_literal_string,
+    parse_basic_string,
+    parse_literal_string,
+    parse_bool_value,
+    parse_float_value,
+    parse_date_like_value,
+  ]
+  case list.find_map(parsers, fn(parse) { parse(text) }) {
     Ok(value) -> Ok(value)
-    Error(Nil) ->
-      case parse_multiline_literal_string(text) {
-        Ok(value) -> Ok(value)
-        Error(Nil) ->
-          case parse_basic_string(text) {
-            Ok(value) -> Ok(value)
-            Error(Nil) ->
-              case parse_literal_string(text) {
-                Ok(value) -> Ok(value)
-                Error(Nil) ->
-                  case parse_bool_value(text) {
-                    Ok(value) -> Ok(value)
-                    Error(Nil) ->
-                      case parse_float_value(text) {
-                        Ok(value) -> Ok(value)
-                        Error(Nil) ->
-                          case parse_date_like_value(text) {
-                            Ok(value) -> Ok(value)
-                            Error(Nil) -> parse_int_value(text, offset)
-                          }
-                      }
-                  }
-              }
-          }
-      }
+    Error(Nil) -> parse_int_value(text, offset)
   }
 }
 
@@ -1138,26 +1148,24 @@ fn parse_array_value(
   text: String,
   offset: Int,
 ) -> Result(ast.Value, ParseError) {
-  case string.starts_with(text, "[") && string.ends_with(text, "]") {
-    True -> {
-      let body =
-        text
-        |> string.drop_start(1)
-        |> string.drop_end(1)
-      let clean_body = strip_inline_comments_by_line(body)
+  let is_array = string.starts_with(text, "[") && string.ends_with(text, "]")
+  use <- bool.guard(
+    when: !is_array,
+    return: Error(Unexpected(text, ExpectedSyntax, offset)),
+  )
+  let body =
+    text
+    |> string.drop_start(1)
+    |> string.drop_end(1)
+  let clean_body = strip_inline_comments_by_line(body)
 
-      case string.trim(clean_body) {
-        "" -> Ok(ast.Array([], text))
-        _ ->
-          case
-            parse_array_items(split_top_level_commas(clean_body), offset + 1)
-          {
-            Ok(items) -> Ok(ast.Array(items, text))
-            Error(error) -> Error(error)
-          }
+  case string.trim(clean_body) {
+    "" -> Ok(ast.Array([], text))
+    _ ->
+      case parse_array_items(split_top_level_commas(clean_body), offset + 1) {
+        Ok(items) -> Ok(ast.Array(items, text))
+        Error(error) -> Error(error)
       }
-    }
-    False -> Error(Unexpected(text, ExpectedSyntax, offset))
   }
 }
 
@@ -1195,34 +1203,31 @@ fn parse_inline_table_value(
   text: String,
   offset: Int,
 ) -> Result(ast.Value, ParseError) {
-  case string.starts_with(text, "{") && string.ends_with(text, "}") {
-    True -> {
-      let body =
-        text
-        |> string.drop_start(1)
-        |> string.drop_end(1)
-      let clean_body = strip_inline_comments_by_line(body)
+  let is_inline_table =
+    string.starts_with(text, "{") && string.ends_with(text, "}")
+  use <- bool.guard(
+    when: !is_inline_table,
+    return: Error(Unexpected(text, ExpectedSyntax, offset)),
+  )
+  let body =
+    text
+    |> string.drop_start(1)
+    |> string.drop_end(1)
+  let clean_body = strip_inline_comments_by_line(body)
 
-      case inline_table_newlines_are_valid(body) {
-        False -> Error(Unexpected(text, ExpectedSyntax, offset))
-        True ->
-          case string.trim(clean_body) {
-            "" -> Ok(ast.InlineTable([], text))
-            _ ->
-              case
-                parse_inline_entries(
-                  split_top_level_commas(clean_body),
-                  offset + 1,
-                  [],
-                )
-              {
-                Ok(entries) -> Ok(ast.InlineTable(entries, text))
-                Error(error) -> Error(error)
-              }
-          }
+  use <- bool.guard(
+    when: !inline_table_newlines_are_valid(body),
+    return: Error(Unexpected(text, ExpectedSyntax, offset)),
+  )
+  case string.trim(clean_body) {
+    "" -> Ok(ast.InlineTable([], text))
+    _ ->
+      case
+        parse_inline_entries(split_top_level_commas(clean_body), offset + 1, [])
+      {
+        Ok(entries) -> Ok(ast.InlineTable(entries, text))
+        Error(error) -> Error(error)
       }
-    }
-    False -> Error(Unexpected(text, ExpectedSyntax, offset))
   }
 }
 
@@ -1302,55 +1307,37 @@ fn parse_inline_entries(
     [] -> Ok([])
     [#(part, part_offset), ..rest] -> {
       let entry_offset = body_offset + part_offset
-      case string.trim(part) {
-        "" -> Error(Unexpected("", ExpectedSyntax, entry_offset))
-        _ ->
-          case split_key_value(part) {
-            Ok(#(raw_key, raw_value)) ->
-              case parse_key(string.trim(raw_key)) {
-                Ok(key) -> {
-                  let key_path = key_utils.to_strings(key)
-                  case key_path_conflicts(seen, key_path) {
-                    True ->
-                      Error(Unexpected(part, ExpectedSyntax, entry_offset))
-                    False ->
-                      case
-                        parse_value(
-                          string.trim(strip_inline_comments_by_line(raw_value)),
-                          entry_offset
-                            + string.byte_size(raw_key)
-                            + 1
-                            + trim_start_byte_offset(raw_value),
-                        )
-                      {
-                        Ok(value) ->
-                          case
-                            parse_inline_entries(rest, body_offset, [
-                              key_path,
-                              ..seen
-                            ])
-                          {
-                            Ok(entries) ->
-                              Ok([
-                                ast.InlineTableEntry(
-                                  ast.Trivia(""),
-                                  key,
-                                  value,
-                                  ast.Trivia(""),
-                                ),
-                                ..entries
-                              ])
-                            Error(error) -> Error(error)
-                          }
-                        Error(error) -> Error(error)
-                      }
-                  }
-                }
-                Error(Nil) -> Error(Unexpected(part, ExpectedKey, entry_offset))
-              }
-            Error(Nil) -> Error(Unexpected(part, ExpectedSyntax, entry_offset))
-          }
-      }
+      use <- bool.guard(
+        when: string.trim(part) == "",
+        return: Error(Unexpected("", ExpectedSyntax, entry_offset)),
+      )
+      use #(raw_key, raw_value) <- result.try(result.replace_error(
+        split_key_value(part),
+        Unexpected(part, ExpectedSyntax, entry_offset),
+      ))
+      use key <- result.try(result.replace_error(
+        parse_key(string.trim(raw_key)),
+        Unexpected(part, ExpectedKey, entry_offset),
+      ))
+      let key_path = key_utils.to_strings(key)
+      use <- bool.guard(
+        when: key_path_conflicts(seen, key_path),
+        return: Error(Unexpected(part, ExpectedSyntax, entry_offset)),
+      )
+      use value <- result.try(parse_value(
+        string.trim(strip_inline_comments_by_line(raw_value)),
+        entry_offset
+          + string.byte_size(raw_key)
+          + 1
+          + trim_start_byte_offset(raw_value),
+      ))
+      use entries <- result.try(
+        parse_inline_entries(rest, body_offset, [key_path, ..seen]),
+      )
+      Ok([
+        ast.InlineTableEntry(ast.Trivia(""), key, value, ast.Trivia("")),
+        ..entries
+      ])
     }
   }
 }
@@ -1427,71 +1414,65 @@ fn strip_inline_comment_loop(
 }
 
 fn parse_multiline_basic_string(text: String) -> Result(ast.Value, Nil) {
-  case string.starts_with(text, "\"\"\"") && string.ends_with(text, "\"\"\"") {
-    True -> {
-      let inner =
-        text
-        |> string.drop_start(3)
-        |> string.drop_end(3)
+  let is_delimited =
+    string.starts_with(text, "\"\"\"") && string.ends_with(text, "\"\"\"")
+  use <- bool.guard(when: !is_delimited, return: Error(Nil))
+  let inner =
+    text
+    |> string.drop_start(3)
+    |> string.drop_end(3)
 
-      case text != "\"\"\"" && multiline_basic_string_content_is_valid(inner) {
-        True -> Ok(ast.String(inner, ast.MultiBasicString, text))
-        False -> Error(Nil)
-      }
-    }
-    False -> Error(Nil)
-  }
+  let content_valid =
+    text != "\"\"\"" && multiline_basic_string_content_is_valid(inner)
+  use <- bool.guard(when: !content_valid, return: Error(Nil))
+  Ok(ast.String(inner, ast.MultiBasicString, text))
 }
 
 fn parse_multiline_literal_string(text: String) -> Result(ast.Value, Nil) {
-  case string.starts_with(text, "'''") && string.ends_with(text, "'''") {
-    True -> {
-      let inner =
-        text
-        |> string.drop_start(3)
-        |> string.drop_end(3)
+  let is_delimited =
+    string.starts_with(text, "'''") && string.ends_with(text, "'''")
+  use <- bool.guard(when: !is_delimited, return: Error(Nil))
+  let inner =
+    text
+    |> string.drop_start(3)
+    |> string.drop_end(3)
 
-      case text != "'''" && multiline_literal_string_content_is_valid(inner) {
-        True -> Ok(ast.String(inner, ast.MultiLiteralString, text))
-        False -> Error(Nil)
-      }
-    }
-    False -> Error(Nil)
-  }
+  let content_valid =
+    text != "'''" && multiline_literal_string_content_is_valid(inner)
+  use <- bool.guard(when: !content_valid, return: Error(Nil))
+  Ok(ast.String(inner, ast.MultiLiteralString, text))
 }
 
 fn parse_basic_string(text: String) -> Result(ast.Value, Nil) {
-  case string.starts_with(text, "\"") && string.ends_with(text, "\"") {
-    True -> {
-      let inner =
-        text
-        |> string.drop_start(1)
-        |> string.drop_end(1)
+  let is_delimited =
+    string.starts_with(text, "\"") && string.ends_with(text, "\"")
+  use <- bool.guard(when: !is_delimited, return: Error(Nil))
+  let inner =
+    text
+    |> string.drop_start(1)
+    |> string.drop_end(1)
 
-      case basic_string_content_is_valid(inner) {
-        True -> Ok(ast.String(inner, ast.BasicString, text))
-        False -> Error(Nil)
-      }
-    }
-    False -> Error(Nil)
-  }
+  use <- bool.guard(
+    when: !basic_string_content_is_valid(inner),
+    return: Error(Nil),
+  )
+  Ok(ast.String(inner, ast.BasicString, text))
 }
 
 fn parse_literal_string(text: String) -> Result(ast.Value, Nil) {
-  case string.starts_with(text, "'") && string.ends_with(text, "'") {
-    True -> {
-      let inner =
-        text
-        |> string.drop_start(1)
-        |> string.drop_end(1)
+  let is_delimited =
+    string.starts_with(text, "'") && string.ends_with(text, "'")
+  use <- bool.guard(when: !is_delimited, return: Error(Nil))
+  let inner =
+    text
+    |> string.drop_start(1)
+    |> string.drop_end(1)
 
-      case literal_string_content_is_valid(inner) {
-        True -> Ok(ast.String(inner, ast.LiteralString, text))
-        False -> Error(Nil)
-      }
-    }
-    False -> Error(Nil)
-  }
+  use <- bool.guard(
+    when: !literal_string_content_is_valid(inner),
+    return: Error(Nil),
+  )
+  Ok(ast.String(inner, ast.LiteralString, text))
 }
 
 fn literal_string_content_is_valid(text: String) -> Bool {
@@ -1691,18 +1672,13 @@ fn parse_signed_exponent(text: String) -> Result(Int, Nil) {
 }
 
 fn parse_date_like_value(text: String) -> Result(ast.Value, Nil) {
-  case datetime_repr_is_valid(text) {
-    True -> Ok(ast.DateTime(text))
-    False ->
-      case time_repr_is_valid(text) {
-        True -> Ok(ast.Time(text))
-        False ->
-          case date_repr_is_valid(text) {
-            True -> Ok(ast.Date(text))
-            False -> Error(Nil)
-          }
-      }
-  }
+  use <- bool.guard(
+    when: datetime_repr_is_valid(text),
+    return: Ok(ast.DateTime(text)),
+  )
+  use <- bool.guard(when: time_repr_is_valid(text), return: Ok(ast.Time(text)))
+  use <- bool.guard(when: date_repr_is_valid(text), return: Ok(ast.Date(text)))
+  Error(Nil)
 }
 
 fn parse_int_value(text: String, offset: Int) -> Result(ast.Value, ParseError) {
@@ -1711,7 +1687,7 @@ fn parse_int_value(text: String, offset: Int) -> Result(ast.Value, ParseError) {
     True ->
       case int.parse(normalized) {
         Ok(value) -> Ok(ast.Int(value, text))
-        Error(_) -> parse_based_int_value(normalized, text, offset)
+        Error(Nil) -> parse_based_int_value(normalized, text, offset)
       }
     False -> Error(Unexpected(text, ExpectedValue, offset))
   }
@@ -1851,7 +1827,7 @@ fn unicode_escape_scalar_is_valid(escape: String) -> Bool {
     Ok(value) ->
       case string.utf_codepoint(value) {
         Ok(_) -> True
-        Error(_) -> False
+        Error(Nil) -> False
       }
     Error(Nil) -> False
   }
@@ -1890,17 +1866,17 @@ fn int_repr_is_valid(text: String) -> Bool {
 }
 
 fn decimal_digits_are_valid(text: String) -> Bool {
-  case separated_digits_are_valid(string.to_graphemes(text), char_is_digit) {
-    True ->
-      case string.replace(text, each: "_", with: "") {
-        "" -> False
-        digits ->
-          case string.length(digits) > 1 && string.starts_with(digits, "0") {
-            True -> False
-            False -> True
-          }
-      }
-    False -> False
+  use <- bool.guard(
+    when: !separated_digits_are_valid(string.to_graphemes(text), char_is_digit),
+    return: False,
+  )
+  case string.replace(text, each: "_", with: "") {
+    "" -> False
+    digits -> {
+      let has_leading_zero =
+        string.length(digits) > 1 && string.starts_with(digits, "0")
+      !has_leading_zero
+    }
   }
 }
 
@@ -1982,14 +1958,12 @@ fn exponent_repr_is_valid(text: String) -> Bool {
 }
 
 pub fn date_repr_is_valid(text: String) -> Bool {
-  case
+  let has_date_shape =
     string.length(text) == 10
     && string.slice(text, 4, 1) == "-"
     && string.slice(text, 7, 1) == "-"
-  {
-    True -> date_parts_are_valid(text)
-    False -> False
-  }
+  use <- bool.guard(when: !has_date_shape, return: False)
+  date_parts_are_valid(text)
 }
 
 pub fn datetime_repr_is_valid(text: String) -> Bool {
@@ -2037,38 +2011,30 @@ fn find_offset_separator(
 }
 
 fn offset_repr_is_valid(text: String) -> Bool {
-  case
+  let has_offset_shape =
     string.length(text) == 6
     && { string.starts_with(text, "+") || string.starts_with(text, "-") }
     && string.slice(text, 3, 1) == ":"
-  {
-    True -> {
-      let hour = string.slice(text, 1, 2)
-      let minute = string.slice(text, 4, 2)
-      two_digits_in_range(hour, 0, 23) && two_digits_in_range(minute, 0, 59)
-    }
-    False -> False
-  }
+  use <- bool.guard(when: !has_offset_shape, return: False)
+  let hour = string.slice(text, 1, 2)
+  let minute = string.slice(text, 4, 2)
+  two_digits_in_range(hour, 0, 23) && two_digits_in_range(minute, 0, 59)
 }
 
 pub fn time_repr_is_valid(text: String) -> Bool {
-  case
+  let has_time_shape =
     string.length(text) >= 8
     && string.slice(text, 2, 1) == ":"
     && string.slice(text, 5, 1) == ":"
-  {
-    True -> {
-      let hour = string.slice(text, 0, 2)
-      let minute = string.slice(text, 3, 2)
-      let seconds = string.slice(text, 6, 2)
-      let fraction = string.drop_start(text, 8)
-      two_digits_in_range(hour, 0, 23)
-      && two_digits_in_range(minute, 0, 59)
-      && two_digits_in_range(seconds, 0, 59)
-      && fraction_is_valid(fraction)
-    }
-    False -> False
-  }
+  use <- bool.guard(when: !has_time_shape, return: False)
+  let hour = string.slice(text, 0, 2)
+  let minute = string.slice(text, 3, 2)
+  let seconds = string.slice(text, 6, 2)
+  let fraction = string.drop_start(text, 8)
+  two_digits_in_range(hour, 0, 23)
+  && two_digits_in_range(minute, 0, 59)
+  && two_digits_in_range(seconds, 0, 59)
+  && fraction_is_valid(fraction)
 }
 
 fn fraction_is_valid(text: String) -> Bool {
@@ -2122,24 +2088,20 @@ fn is_leap_year(year: Int) -> Bool {
 }
 
 fn two_digits_in_range(text: String, minimum: Int, maximum: Int) -> Bool {
-  case
+  let has_two_digits =
     string.length(text) == 2
     && separated_digits_are_valid(string.to_graphemes(text), char_is_digit)
-  {
-    True ->
-      case int.parse(text) {
-        Ok(value) -> value >= minimum && value <= maximum
-        Error(_) -> False
-      }
-    False -> False
+  use <- bool.guard(when: !has_two_digits, return: False)
+  case int.parse(text) {
+    Ok(value) -> value >= minimum && value <= maximum
+    Error(Nil) -> False
   }
 }
 
 fn drop_sign(text: String) -> String {
-  case string.starts_with(text, "+") || string.starts_with(text, "-") {
-    True -> string.drop_start(text, 1)
-    False -> text
-  }
+  let has_sign = string.starts_with(text, "+") || string.starts_with(text, "-")
+  use <- bool.guard(when: !has_sign, return: text)
+  string.drop_start(text, 1)
 }
 
 fn char_is_digit(char: String) -> Bool {
@@ -2322,7 +2284,7 @@ fn unicode_escape_to_string(escape: String) -> String {
     Ok(value) ->
       case string.utf_codepoint(value) {
         Ok(codepoint) -> string.from_utf_codepoints([codepoint])
-        Error(_) -> "\\u{" <> escape <> "}"
+        Error(Nil) -> "\\u{" <> escape <> "}"
       }
     Error(Nil) -> "\\u{" <> escape <> "}"
   }
