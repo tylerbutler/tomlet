@@ -4,9 +4,9 @@
 
 **Goal:** Build `examples/gleam_toml_manager/`, a glint-based CLI that manages a `gleam.toml` (bump version, add/remove deps, get/set keys) while preserving comments and key order, demonstrating tomlet's public API on both Erlang and JavaScript targets.
 
-**Architecture:** An isolated Gleam sub-project (its own `gleam.toml`) so the dependency-free `tomlet` library stays clean. Thin glint command wiring delegates to a pure `commands` module that operates on a `tomlet.Document`; file IO lives only at the edges. A small `semver` module handles version math and an `app_error` module unifies error rendering.
+**Architecture:** An isolated Gleam sub-project (its own `gleam.toml`) so the dependency-free `tomlet` library stays clean. Thin glint command wiring delegates to a pure `commands` module that operates on a `tomlet.Document`; file IO lives only at the edges. A small `semver` module wraps the `gleamsver` library (adding the bump logic it lacks) and an `app_error` module unifies error rendering.
 
-**Tech Stack:** Gleam, glint (CLI), argv (argument access), simplifile (dual-target file IO), shellout (cross-target exit codes), gleeunit (tests), tomlet (the library under demonstration).
+**Tech Stack:** Gleam, glint (CLI), argv (argument access), simplifile (dual-target file IO), shellout (cross-target exit codes), gleamsver (SemVer 2.0.0 parsing), gleeunit (tests), tomlet (the library under demonstration).
 
 ---
 
@@ -41,7 +41,8 @@
 | `examples/gleam_toml_manager/.gitignore` | Ignore `build/`. |
 | `examples/gleam_toml_manager/sample.gleam.toml` | Commented fixture to demo against. |
 | `examples/gleam_toml_manager/README.md` | What it shows + how to run on both targets. |
-| `src/gleam_toml_manager/semver.gleam` | Pure semver parse/bump/render. |
+| `src/gleam_toml_manager/semver.gleam` | Wraps `gleamsver` for parse/render; adds `Part` + `bump`. |
+| `test/gleam_toml_manager_test.gleam` | gleeunit entry point (`gleam test` runs this module's `main`). |
 | `src/gleam_toml_manager/app_error.gleam` | Unified `AppError` + `to_message`. |
 | `src/gleam_toml_manager/commands.gleam` | Pure domain fns over `Document` (the tomlet showcase) + `value_to_display`. |
 | `src/gleam_toml_manager.gleam` | glint wiring, IO helpers, exit codes (`shellout.exit`), `main`. |
@@ -125,10 +126,10 @@ pub fn main() {
 Run (from inside the example dir):
 
 ```bash
-cd examples/gleam_toml_manager && gleam add glint argv simplifile shellout
+cd examples/gleam_toml_manager && gleam add glint argv simplifile shellout gleamsver
 ```
 
-Expected: glint, argv, simplifile, and shellout are appended to `[dependencies]` in `gleam.toml` and resolved in `manifest.toml`.
+Expected: glint, argv, simplifile, shellout, and gleamsver are appended to `[dependencies]` in `gleam.toml` and resolved in `manifest.toml`.
 
 - [ ] **Step 6: Verify the project builds on both targets**
 
@@ -149,28 +150,47 @@ git commit -m "chore: scaffold gleam_toml_manager example project"
 
 ---
 
-## Task 2: semver module
+## Task 2: semver module (wrapping gleamsver)
+
+Version parsing/formatting is delegated to the `gleamsver` library (strict
+SemVer 2.0.0, pure Gleam so it stays dual-target). This module adds only what
+gleamsver lacks: a `Part` type and a `bump` function. Versions are represented
+by `gleamsver.SemVer` directly.
 
 **Files:**
+- Create: `examples/gleam_toml_manager/test/gleam_toml_manager_test.gleam`
 - Create: `examples/gleam_toml_manager/src/gleam_toml_manager/semver.gleam`
 - Test: `examples/gleam_toml_manager/test/semver_test.gleam`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Create the gleeunit entry module**
+
+`gleam test` runs the `main` of the module named after the project. Create
+`examples/gleam_toml_manager/test/gleam_toml_manager_test.gleam`:
+
+```gleam
+import gleeunit
+
+pub fn main() {
+  gleeunit.main()
+}
+```
+
+`gleeunit.main()` then discovers and runs every `*_test` function in all
+`*_test` modules — so the per-feature test files below do not need their own
+`main`.
+
+- [ ] **Step 2: Write the failing tests**
 
 Create `examples/gleam_toml_manager/test/semver_test.gleam`:
 
 ```gleam
 import gleam_toml_manager/semver
-import gleeunit
+import gleamsver.{SemVer}
 import gleeunit/should
-
-pub fn main() {
-  gleeunit.main()
-}
 
 pub fn parse_valid_test() {
   semver.parse("1.2.3")
-  |> should.equal(Ok(semver.Version(1, 2, 3)))
+  |> should.equal(Ok(SemVer(1, 2, 3, "", "")))
 }
 
 pub fn parse_too_few_components_test() {
@@ -184,22 +204,27 @@ pub fn parse_non_numeric_test() {
 }
 
 pub fn bump_major_resets_lower_test() {
-  semver.bump(semver.Version(0, 9, 9), semver.Major)
-  |> should.equal(semver.Version(1, 0, 0))
+  semver.bump(SemVer(0, 9, 9, "", ""), semver.Major)
+  |> should.equal(SemVer(1, 0, 0, "", ""))
 }
 
 pub fn bump_minor_resets_patch_test() {
-  semver.bump(semver.Version(1, 2, 3), semver.Minor)
-  |> should.equal(semver.Version(1, 3, 0))
+  semver.bump(SemVer(1, 2, 3, "", ""), semver.Minor)
+  |> should.equal(SemVer(1, 3, 0, "", ""))
 }
 
 pub fn bump_patch_test() {
-  semver.bump(semver.Version(1, 2, 3), semver.Patch)
-  |> should.equal(semver.Version(1, 2, 4))
+  semver.bump(SemVer(1, 2, 3, "", ""), semver.Patch)
+  |> should.equal(SemVer(1, 2, 4, "", ""))
+}
+
+pub fn bump_clears_prerelease_test() {
+  semver.bump(SemVer(1, 2, 3, "rc0", "build1"), semver.Minor)
+  |> should.equal(SemVer(1, 3, 0, "", ""))
 }
 
 pub fn to_string_test() {
-  semver.to_string(semver.Version(1, 0, 0))
+  semver.to_string(SemVer(1, 0, 0, "", ""))
   |> should.equal("1.0.0")
 }
 
@@ -214,7 +239,7 @@ pub fn part_from_string_invalid_test() {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 Run:
 
@@ -224,18 +249,15 @@ cd examples/gleam_toml_manager && gleam test
 
 Expected: FAIL — `semver` module does not exist / unknown module.
 
-- [ ] **Step 3: Write the implementation**
+- [ ] **Step 4: Write the implementation**
 
 Create `examples/gleam_toml_manager/src/gleam_toml_manager/semver.gleam`:
 
 ```gleam
-import gleam/int
-import gleam/string
+import gleam/result
+import gleamsver.{type SemVer, SemVer}
 
-pub type Version {
-  Version(major: Int, minor: Int, patch: Int)
-}
-
+/// The component of a version to increment.
 pub type Part {
   Major
   Minor
@@ -247,35 +269,25 @@ pub type SemverError {
   InvalidPart(text: String)
 }
 
-/// Parse a strict `MAJOR.MINOR.PATCH` version with non-negative components.
-pub fn parse(text: String) -> Result(Version, SemverError) {
-  case string.split(text, ".") {
-    [major_text, minor_text, patch_text] ->
-      case int.parse(major_text), int.parse(minor_text), int.parse(patch_text) {
-        Ok(major), Ok(minor), Ok(patch)
-          if major >= 0 && minor >= 0 && patch >= 0
-        -> Ok(Version(major, minor, patch))
-        _, _, _ -> Error(InvalidVersion(text))
-      }
-    _ -> Error(InvalidVersion(text))
-  }
+/// Parse a SemVer 2.0.0 string. Delegates to the `gleamsver` library and
+/// collapses its detailed parse errors into a single stable variant.
+pub fn parse(text: String) -> Result(SemVer, SemverError) {
+  gleamsver.parse(text)
+  |> result.replace_error(InvalidVersion(text))
 }
 
-/// Increment one component, resetting the components below it.
-pub fn bump(version: Version, part: Part) -> Version {
+/// Increment one component, resetting the components below it and clearing any
+/// pre-release / build metadata.
+pub fn bump(version: SemVer, part: Part) -> SemVer {
   case part {
-    Major -> Version(version.major + 1, 0, 0)
-    Minor -> Version(version.major, version.minor + 1, 0)
-    Patch -> Version(version.major, version.minor, version.patch + 1)
+    Major -> SemVer(version.major + 1, 0, 0, "", "")
+    Minor -> SemVer(version.major, version.minor + 1, 0, "", "")
+    Patch -> SemVer(version.major, version.minor, version.patch + 1, "", "")
   }
 }
 
-pub fn to_string(version: Version) -> String {
-  int.to_string(version.major)
-  <> "."
-  <> int.to_string(version.minor)
-  <> "."
-  <> int.to_string(version.patch)
+pub fn to_string(version: SemVer) -> String {
+  gleamsver.to_string(version)
 }
 
 pub fn part_from_string(text: String) -> Result(Part, SemverError) {
@@ -288,7 +300,7 @@ pub fn part_from_string(text: String) -> Result(Part, SemverError) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run:
 
@@ -296,13 +308,14 @@ Run:
 cd examples/gleam_toml_manager && gleam test
 ```
 
-Expected: PASS — all semver tests green.
+Expected: PASS — all semver tests green. (`gleamsver.to_string` emits `"1.0.0"`
+for `SemVer(1, 0, 0, "", "")`.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add examples/gleam_toml_manager/src/gleam_toml_manager/semver.gleam examples/gleam_toml_manager/test/semver_test.gleam
-git commit -m "feat: add semver parse/bump module to gleam_toml_manager example"
+git add examples/gleam_toml_manager/test/gleam_toml_manager_test.gleam examples/gleam_toml_manager/src/gleam_toml_manager/semver.gleam examples/gleam_toml_manager/test/semver_test.gleam
+git commit -m "feat: add semver module wrapping gleamsver to gleam_toml_manager example"
 ```
 
 ---
@@ -321,13 +334,8 @@ Create `examples/gleam_toml_manager/test/app_error_test.gleam`:
 import gleam/string
 import gleam_toml_manager/app_error
 import gleam_toml_manager/semver
-import gleeunit
 import gleeunit/should
 import tomlet
-
-pub fn main() {
-  gleeunit.main()
-}
 
 pub fn get_error_message_test() {
   app_error.to_message(app_error.GetError(tomlet.KeyNotFound(["version"])))
@@ -505,13 +513,8 @@ import gleam/string
 import gleam_toml_manager/app_error
 import gleam_toml_manager/commands
 import gleam_toml_manager/semver
-import gleeunit
 import gleeunit/should
 import tomlet
-
-pub fn main() {
-  gleeunit.main()
-}
 
 const sample = "# Project metadata\nname = \"demo_app\"\nversion = \"1.2.3\"  # current\n\n[dependencies]\ngleam_stdlib = \">= 0.44.0\"\n"
 

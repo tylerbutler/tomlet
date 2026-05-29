@@ -24,24 +24,27 @@ variants (`GetError`, `EditError`).
 - **Dual target (Erlang + JavaScript).** The example runs on both targets to
   demonstrate that tomlet's API is dual-target (PRD goal #4). All chosen
   dependencies support both: `simplifile` (file IO) and `shellout` (exit codes)
-  ship Erlang and JavaScript/Node FFI, while `glint`, `argv`, and `gleam_stdlib`
-  are target-agnostic. The JavaScript build targets Node.
+  ship Erlang and JavaScript/Node FFI, while `glint`, `argv`, `gleamsver`, and
+  `gleam_stdlib` are pure-Gleam / target-agnostic. The JavaScript build targets
+  Node.
 
 ## Layout
 
 ```
 examples/gleam_toml_manager/
-  gleam.toml            # deps: tomlet (path="../.."), glint, argv, simplifile, shellout, gleam_stdlib
+  gleam.toml            # deps: tomlet (path="../.."), glint, argv, simplifile, shellout, gleamsver, gleam_stdlib
   README.md             # what it shows + how to run each command
   sample.gleam.toml     # commented fixture to demo against
   src/
     gleam_toml_manager.gleam           # glint wiring + main (thin)
     gleam_toml_manager/commands.gleam  # pure domain fns over Document (the tomlet showcase)
-    gleam_toml_manager/semver.gleam    # tiny pure semver parse/bump
+    gleam_toml_manager/semver.gleam    # thin wrapper over the gleamsver library: Part + bump
     gleam_toml_manager/app_error.gleam # unified error type -> friendly message
   test/
-    commands_test.gleam   # round-trip + comment-preservation assertions
-    semver_test.gleam     # semver parse/bump edge cases
+    gleam_toml_manager_test.gleam  # gleeunit entry point (runs all *_test fns)
+    commands_test.gleam            # round-trip + comment-preservation assertions
+    semver_test.gleam              # semver parse/bump edge cases
+    app_error_test.gleam           # error message rendering
 ```
 
 ### Why this shape
