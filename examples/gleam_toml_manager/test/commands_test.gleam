@@ -52,3 +52,28 @@ pub fn bump_missing_version_errors_test() {
   commands.bump(doc, "minor")
   |> should.equal(Error(app_error.GetError(tomlet.KeyNotFound(["version"]))))
 }
+
+pub fn add_dependency_inserts_new_key_test() {
+  let assert Ok(doc) = commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
+  tomlet.get_string(doc, ["dependencies", "wisp"])
+  |> should.equal(Ok(">= 1.0.0"))
+}
+
+pub fn add_dependency_preserves_existing_test() {
+  let assert Ok(doc) = commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
+  tomlet.get_string(doc, ["dependencies", "gleam_stdlib"])
+  |> should.equal(Ok(">= 0.44.0"))
+}
+
+pub fn remove_dependency_deletes_key_test() {
+  let assert Ok(doc) = commands.remove_dependency(parse(sample), "gleam_stdlib")
+  tomlet.get(doc, ["dependencies", "gleam_stdlib"])
+  |> should.equal(Error(tomlet.KeyNotFound(["dependencies", "gleam_stdlib"])))
+}
+
+pub fn remove_missing_dependency_errors_test() {
+  commands.remove_dependency(parse(sample), "nope")
+  |> should.equal(
+    Error(app_error.EditError(tomlet.MissingEditKey(["dependencies", "nope"]))),
+  )
+}

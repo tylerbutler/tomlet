@@ -33,3 +33,23 @@ pub fn bump(
   )
   |> result.map_error(app_error.EditError)
 }
+
+/// Add or replace a dependency under `[dependencies]`, creating that table if
+/// it does not yet exist.
+pub fn add_dependency(
+  doc: tomlet.Document,
+  name: String,
+  version: String,
+) -> Result(tomlet.Document, AppError) {
+  tomlet.set_string(doc, ["dependencies", name], version)
+  |> result.map_error(app_error.EditError)
+}
+
+/// Remove a dependency under `[dependencies]`.
+pub fn remove_dependency(
+  doc: tomlet.Document,
+  name: String,
+) -> Result(tomlet.Document, AppError) {
+  tomlet.remove(doc, ["dependencies", name])
+  |> result.map_error(app_error.EditError)
+}
