@@ -1,0 +1,57 @@
+name: "Setup Gleam Environment"
+description: "Common setup steps for Gleam CI jobs (Erlang + optional Node/JavaScript)"
+
+inputs:
+  otp-version:
+    description: "Erlang/OTP version to install"
+    required: false
+    default: "27"
+  gleam-version:
+    description: "Gleam version to install"
+    required: false
+    default: "1.16.0"
+  rebar3-version:
+    description: "rebar3 version to install"
+    required: false
+    default: "3"
+  node:
+    description: "Whether to setup Node.js for the JavaScript target"
+    required: false
+    default: "false"
+  node-version:
+    description: "Node.js version to install (when node is true)"
+    required: false
+    default: "22"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup just
+      uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # ratchet:extractions/setup-just@v2
+
+    - name: Setup BEAM
+      uses: erlef/setup-beam@e6d7c94229049569db56a7ad5a540c051a010af9 # ratchet:erlef/setup-beam@v1
+      with:
+        otp-version: ${{ inputs.otp-version }}
+        gleam-version: ${{ inputs.gleam-version }}
+        rebar3-version: ${{ inputs.rebar3-version }}
+
+    - name: Setup Node.js
+      if: inputs.node == 'true'
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # ratchet:actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache Gleam dependencies
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # ratchet:actions/cache@v4
+      with:
+        path: |
+          build/packages
+          ~/.cache/gleam
+        key: gleam-${{ runner.os }}-otp${{ inputs.otp-version }}-${{ hashFiles('gleam.toml', 'manifest.toml') }}
+        restore-keys: |
+          gleam-${{ runner.os }}-
+
+    - name: Download dependencies
+      shell: bash
+      run: just deps
