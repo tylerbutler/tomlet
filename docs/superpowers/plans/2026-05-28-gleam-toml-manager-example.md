@@ -6,7 +6,7 @@
 
 **Architecture:** An isolated Gleam sub-project (its own `gleam.toml`) so the dependency-free `tomlet` library stays clean. Thin glint command wiring delegates to a pure `commands` module that operates on a `tomlet.Document`; file IO lives only at the edges. A small `semver` module handles version math and an `app_error` module unifies error rendering.
 
-**Tech Stack:** Gleam, glint (CLI), argv (argument access), simplifile (dual-target file IO), gleeunit (tests), tomlet (the library under demonstration).
+**Tech Stack:** Gleam, glint (CLI), argv (argument access), simplifile (dual-target file IO), shellout (cross-target exit codes), gleeunit (tests), tomlet (the library under demonstration).
 
 ---
 
@@ -44,7 +44,7 @@
 | `src/gleam_toml_manager/semver.gleam` | Pure semver parse/bump/render. |
 | `src/gleam_toml_manager/app_error.gleam` | Unified `AppError` + `to_message`. |
 | `src/gleam_toml_manager/commands.gleam` | Pure domain fns over `Document` (the tomlet showcase) + `value_to_display`. |
-| `src/gleam_toml_manager.gleam` | glint wiring, IO helpers, `main`. |
+| `src/gleam_toml_manager.gleam` | glint wiring, IO helpers, exit codes (`shellout.exit`), `main`. |
 | `test/semver_test.gleam` | semver unit tests. |
 | `test/commands_test.gleam` | Round-trip + comment-preservation tests. |
 
@@ -125,10 +125,10 @@ pub fn main() {
 Run (from inside the example dir):
 
 ```bash
-cd examples/gleam_toml_manager && gleam add glint argv simplifile
+cd examples/gleam_toml_manager && gleam add glint argv simplifile shellout
 ```
 
-Expected: glint, argv, and simplifile are appended to `[dependencies]` in `gleam.toml` and resolved in `manifest.toml`.
+Expected: glint, argv, simplifile, and shellout are appended to `[dependencies]` in `gleam.toml` and resolved in `manifest.toml`.
 
 - [ ] **Step 6: Verify the project builds on both targets**
 
@@ -869,6 +869,7 @@ import gleam/result
 import gleam_toml_manager/app_error.{type AppError}
 import gleam_toml_manager/commands
 import glint
+import shellout
 import simplifile
 import tomlet
 
@@ -1017,8 +1018,13 @@ fn parse_doc(source: String) -> Result(tomlet.Document, AppError) {
   |> result.map_error(fn(error) { app_error.ParseError(error, source) })
 }
 
+/// Print the error to stderr and terminate with a non-zero status. `shellout.exit`
+/// sets the process exit code on both the Erlang and JavaScript targets, so the
+/// CLI is usable in pipelines and CI. Successful command paths return `Nil` and
+/// let the runtime exit `0` normally.
 fn fail(error: AppError) -> Nil {
   io.println_error(app_error.to_message(error))
+  shellout.exit(1)
 }
 ```
 
@@ -1054,17 +1060,29 @@ cd examples/gleam_toml_manager && gleam run --target javascript -- get dependenc
 
 Expected: prints `>= 0.44.0 and < 2.0.0`.
 
-- [ ] **Step 5: Smoke-test an error path**
+- [ ] **Step 5: Smoke-test an error path and its exit code**
 
 Run:
 
 ```bash
-cd examples/gleam_toml_manager && gleam run -- remove-dep nope --file sample.gleam.toml --dry-run
+cd examples/gleam_toml_manager && gleam run -- remove-dep nope --file sample.gleam.toml --dry-run; echo "exit=$?"
 ```
 
-Expected: stderr shows `edit error: key not found: dependencies.nope` and `sample.gleam.toml` is unchanged.
+Expected: stderr shows `edit error: key not found: dependencies.nope`, `sample.gleam.toml` is unchanged, and the final line is `exit=1`.
 
-- [ ] **Step 6: Commit**
+> Note: `gleam run` itself returns the script's exit code, so `shellout.exit(1)` propagates through to the shell. If you instead see `exit=0`, confirm `fail` calls `shellout.exit(1)` and that shellout resolved for the current target.
+
+- [ ] **Step 6: Confirm a successful command exits 0**
+
+Run:
+
+```bash
+cd examples/gleam_toml_manager && gleam run -- get name --file sample.gleam.toml; echo "exit=$?"
+```
+
+Expected: prints `demo_app` then `exit=0`.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add examples/gleam_toml_manager/src/gleam_toml_manager.gleam
@@ -1139,6 +1157,16 @@ Run the same thing on the JavaScript target:
 gleam run --target javascript -- bump minor --file sample.gleam.toml --dry-run
 ```
 
+## Exit codes
+
+The CLI exits `0` on success and `1` on any error (missing file, parse error,
+missing key, bad version, …), printing the reason to stderr. Exit codes work on
+both targets via `shellout.exit`, so the tool is safe to use in scripts and CI:
+
+```sh
+gleam run -- bump minor --file gleam.toml || echo "bump failed"
+```
+
 ## Test
 
 ```sh
@@ -1186,6 +1214,7 @@ git commit -m "docs: add README for gleam_toml_manager example"
 - [ ] `gleam test --target erlang` and `gleam test --target javascript` both pass.
 - [ ] `bump`, `add-dep`, `remove-dep`, `get`, `set` each work via `gleam run --`.
 - [ ] `--dry-run` prints without modifying the file; without it the file is updated.
+- [ ] A failing command exits `1` (e.g. `remove-dep nope`); a succeeding command exits `0` — on both targets.
 - [ ] Comments and key order survive every edit (verified by `bump --dry-run` output).
 - [ ] The `tomlet` library's own `gleam.toml` and dependency graph are unchanged.
 ```

@@ -23,15 +23,15 @@ variants (`GetError`, `EditError`).
   library's dependency graph.
 - **Dual target (Erlang + JavaScript).** The example runs on both targets to
   demonstrate that tomlet's API is dual-target (PRD goal #4). All chosen
-  dependencies support both: `simplifile` (file IO) works on Erlang and on the
-  JavaScript/Node target, while `glint`, `argv`, and `gleam_stdlib` are
-  target-agnostic. The JavaScript build targets Node.
+  dependencies support both: `simplifile` (file IO) and `shellout` (exit codes)
+  ship Erlang and JavaScript/Node FFI, while `glint`, `argv`, and `gleam_stdlib`
+  are target-agnostic. The JavaScript build targets Node.
 
 ## Layout
 
 ```
 examples/gleam_toml_manager/
-  gleam.toml            # deps: tomlet (path="../.."), glint, argv, simplifile, gleam_stdlib
+  gleam.toml            # deps: tomlet (path="../.."), glint, argv, simplifile, shellout, gleam_stdlib
   README.md             # what it shows + how to run each command
   sample.gleam.toml     # commented fixture to demo against
   src/
@@ -100,9 +100,9 @@ A single `AppError` type wraps every failure source:
 `app_error.to_message` renders each variant to a clear one-line message printed
 to **stderr** via `io.println_error`. No silent fallbacks: e.g. running `bump`
 against a missing or non-string `version` reports exactly that rather than
-guessing. (A non-zero exit code is intentionally omitted — it would require
-per-target FFI, which is out of proportion for an example; the error message is
-the contract.)
+guessing. On any error the CLI exits with status `1` via `shellout.exit` (which
+provides cross-target Erlang/JavaScript exit codes); a successful run exits `0`.
+This makes the tool composable in shell pipelines and CI.
 
 ## Testing strategy
 
