@@ -15,3 +15,26 @@ gleam_stdlib = ">= 1.0.0 and < 2.0.0"
 
 [dev_dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
+glinter = ">= 2.19.0 and < 3.0.0"
+
+[tools.glinter]
+include = ["src/", "test/"]
+
+[tools.glinter.rules]
+# Correctness — fail the build.
+avoid_panic = "error"
+avoid_todo = "error"
+division_by_zero = "error"
+
+# Too opinionated for this codebase (flags labels on most multi-arg functions).
+label_possible = "off"
+
+[tools.glinter.ignore]
+# gleeunit discovers `pub fn *_test` by reflection, leans on `let assert`, and
+# its test bodies return Nil — so these rules fight test conventions. They stay
+# enabled for src/, where they're useful, and are suppressed only for tests.
+"test/**/*.gleam" = [
+  "unused_exports",
+  "assert_ok_pattern",
+  "missing_type_annotation",
+]
