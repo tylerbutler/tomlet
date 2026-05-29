@@ -3,6 +3,7 @@
 //// This module may change without notice. Use the top-level `tomlet` module
 //// for supported parsing, reading, editing, and writing APIs.
 
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import tomlet/ast
@@ -32,23 +33,29 @@ fn scan_entries(
           kind: ast.ArrayOfTablesHeader,
           trivia: _,
         )) -> scan_entries(rest, key_utils.to_strings(key), target)
-        ast.KeyValue(key: key, value: value, ..) -> {
-          let full_key = list.append(active_table, key_utils.to_strings(key))
-          case full_key == target {
-            True -> Ok(value)
-            False ->
-              case value {
-                ast.InlineTable(entries, source_text: _) ->
-                  case scan_inline_entries(entries, full_key, target) {
-                    Ok(value) -> Ok(value)
-                    Error(Nil) -> scan_entries(rest, active_table, target)
-                  }
-                _ -> scan_entries(rest, active_table, target)
-              }
-          }
-        }
+        ast.KeyValue(key: key, value: value, ..) ->
+          scan_key_value(key, value, rest, active_table, target)
         _ -> scan_entries(rest, active_table, target)
       }
+  }
+}
+
+fn scan_key_value(
+  key: ast.Key,
+  value: ast.Value,
+  rest: List(ast.Entry),
+  active_table: List(String),
+  target: List(String),
+) -> Result(ast.Value, Nil) {
+  let full_key = list.append(active_table, key_utils.to_strings(key))
+  use <- bool.guard(when: full_key == target, return: Ok(value))
+  case value {
+    ast.InlineTable(inline_entries, source_text: _) ->
+      case scan_inline_entries(inline_entries, full_key, target) {
+        Ok(found) -> Ok(found)
+        Error(Nil) -> scan_entries(rest, active_table, target)
+      }
+    _ -> scan_entries(rest, active_table, target)
   }
 }
 
@@ -59,21 +66,27 @@ fn scan_inline_entries(
 ) -> Result(ast.Value, Nil) {
   case entries {
     [] -> Error(Nil)
-    [ast.InlineTableEntry(key: key, value: value, ..), ..rest] -> {
-      let full_key = list.append(active_path, key_utils.to_strings(key))
-      case full_key == target {
-        True -> Ok(value)
-        False ->
-          case value {
-            ast.InlineTable(entries, source_text: _) ->
-              case scan_inline_entries(entries, full_key, target) {
-                Ok(value) -> Ok(value)
-                Error(Nil) -> scan_inline_entries(rest, active_path, target)
-              }
-            _ -> scan_inline_entries(rest, active_path, target)
-          }
+    [ast.InlineTableEntry(key: key, value: value, ..), ..rest] ->
+      scan_inline_entry(key, value, rest, active_path, target)
+  }
+}
+
+fn scan_inline_entry(
+  key: ast.Key,
+  value: ast.Value,
+  rest: List(ast.InlineTableEntry),
+  active_path: List(String),
+  target: List(String),
+) -> Result(ast.Value, Nil) {
+  let full_key = list.append(active_path, key_utils.to_strings(key))
+  use <- bool.guard(when: full_key == target, return: Ok(value))
+  case value {
+    ast.InlineTable(nested_entries, source_text: _) ->
+      case scan_inline_entries(nested_entries, full_key, target) {
+        Ok(found) -> Ok(found)
+        Error(Nil) -> scan_inline_entries(rest, active_path, target)
       }
-    }
+    _ -> scan_inline_entries(rest, active_path, target)
   }
 }
 
@@ -99,23 +112,7 @@ fn collect_array_tables_loop(
         ast.TableHeader(header) -> {
           let next_tables =
             finish_array_table(current_header, current_entries, tables)
-          case header {
-            ast.Header(key: key, kind: ast.ArrayOfTablesHeader, trivia: _) -> {
-              case key_utils.to_strings(key) == target {
-                True ->
-                  collect_array_tables_loop(
-                    rest,
-                    target,
-                    Some(header),
-                    [],
-                    next_tables,
-                  )
-                False ->
-                  collect_array_tables_loop(rest, target, None, [], next_tables)
-              }
-            }
-            _ -> collect_array_tables_loop(rest, target, None, [], next_tables)
-          }
+          collect_array_table_header(header, rest, target, next_tables)
         }
         _ ->
           case current_header {
@@ -137,6 +134,24 @@ fn collect_array_tables_loop(
               )
           }
       }
+  }
+}
+
+fn collect_array_table_header(
+  header: ast.Header,
+  rest: List(ast.Entry),
+  target: List(String),
+  next_tables: List(ast.Table),
+) -> List(ast.Table) {
+  case header {
+    ast.Header(key: key, kind: ast.ArrayOfTablesHeader, trivia: _) -> {
+      let next_header = case key_utils.to_strings(key) == target {
+        True -> Some(header)
+        False -> None
+      }
+      collect_array_tables_loop(rest, target, next_header, [], next_tables)
+    }
+    _ -> collect_array_tables_loop(rest, target, None, [], next_tables)
   }
 }
 

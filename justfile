@@ -55,8 +55,12 @@ format-check:
 check:
     gleam check
 
-# Run linter (alias for format-check)
-lint: format-check
+# Run the glinter linter
+glint:
+    gleam run -m glinter
+
+# Run linters (formatting + glinter)
+lint: format-check glint
 
 # Remove build artifacts
 clean:
@@ -85,7 +89,7 @@ docs:
 # === CI ===
 
 # Full validation workflow
-ci: format-check check test build-strict build-strict-js docs
+ci: format-check glint check test build-strict build-strict-js docs
 
 alias pr := ci
 alias cl := change

@@ -27,13 +27,14 @@ pub fn parse_basic_int_and_get_it_test() {
 
 pub fn get_returns_public_scalar_values_test() {
   let input =
-    "name = \"tomato\"\n"
-    <> "answer = 42\n"
-    <> "enabled = true\n"
-    <> "ratio = 3.14\n"
-    <> "positive = inf\n"
-    <> "negative = -inf\n"
-    <> "nan_value = nan\n"
+    "name = \"tomato\"
+answer = 42
+enabled = true
+ratio = 3.14
+positive = inf
+negative = -inf
+nan_value = nan
+"
   let assert Ok(doc) = tomlet.parse(input)
 
   assert tomlet.get(doc, ["name"]) == Ok(tomlet.StringValue("tomato"))
@@ -56,11 +57,12 @@ pub fn get_returns_key_not_found_for_missing_value_test() {
 
 pub fn get_returns_public_date_time_and_array_values_test() {
   let input =
-    "local_date = 1979-05-27\n"
-    <> "local_time = 07:32:00\n"
-    <> "timestamp = 1979-05-27T07:32:00Z\n"
-    <> "ports = [8000, 8001, 8002]\n"
-    <> "matrix = [[1, 2], [3, 4]]\n"
+    "local_date = 1979-05-27
+local_time = 07:32:00
+timestamp = 1979-05-27T07:32:00Z
+ports = [8000, 8001, 8002]
+matrix = [[1, 2], [3, 4]]
+"
   let assert Ok(doc) = tomlet.parse(input)
 
   let assert Ok(tomlet.DateValue(date)) = tomlet.get(doc, ["local_date"])

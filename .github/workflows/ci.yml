@@ -26,6 +26,9 @@ jobs:
       - name: Check formatting
         run: just format-check
 
+      - name: Lint (glinter)
+        run: just glint
+
       - name: Type check
         run: just check
 
