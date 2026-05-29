@@ -177,6 +177,12 @@ pub fn parse_bytes_accepts_valid_utf8_with_bom_test() {
   assert tomlet.get_string(doc, ["name"]) == Ok("tomato")
 }
 
+pub fn parse_bytes_accepts_bare_bom_test() {
+  let assert Ok(doc) = tomlet.parse_bytes(<<239, 187, 191>>)
+
+  assert tomlet.to_string(doc) == ""
+}
+
 pub fn parse_bytes_rejects_invalid_utf8_test() {
   assert tomlet.parse_bytes(<<110, 97, 109, 101, 32, 61, 32, 255, 10>>)
     == Error(tomlet.InvalidEncoding)

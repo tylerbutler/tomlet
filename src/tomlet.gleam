@@ -81,7 +81,10 @@ pub type GetError {
   WrongType(key: List(String), expected: ExpectedType)
 }
 
-/// Stable TOML value kinds used in typed read errors.
+/// TOML value kinds used in typed read errors.
+///
+/// Variants are part of the stable public API. Adding, removing, or renaming a
+/// variant is treated as a breaking change.
 pub type ExpectedType {
   ExpectedString
   ExpectedInt
@@ -308,14 +311,12 @@ pub fn parse(input: String) -> Result(Document, ParseError) {
 /// // -> Error(tomlet.InvalidEncoding)
 /// ```
 pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
-  let utf8_bom = <<239, 187, 191>>
-  let input_without_initial_bom = case bit_array.starts_with(input, utf8_bom) {
-    True ->
-      case bit_array.slice(input, 3, bit_array.byte_size(input) - 3) {
-        Ok(rest) -> rest
-        Error(_) -> input
-      }
-    False -> input
+  // Strip a single leading UTF-8 BOM (0xEF 0xBB 0xBF). Pattern matching on the
+  // bytes avoids slice/length arithmetic and a fallback that could otherwise
+  // misreport a leading BOM as an embedded one.
+  let input_without_initial_bom = case input {
+    <<239, 187, 191, rest:bits>> -> rest
+    _ -> input
   }
 
   case bit_array_contains_utf8_bom(input_without_initial_bom) {
@@ -580,6 +581,14 @@ pub fn to_string(doc: Document) -> String {
   }
 }
 
+// Replace the document's root and clear the cached original source so the next
+// `to_string` re-emits from the (now-edited) AST. Every edit must produce its
+// result through this helper; relying on each mutator to remember to clear the
+// cache by hand risks silently emitting the pre-edit text.
+fn with_root(doc: Document, root: ast.Table) -> Document {
+  Document(..doc, root: root, original_source: None)
+}
+
 /// Read a TOML value at a key path.
 ///
 /// Use `get` instead of the typed `get_*` helpers when you need to inspect
@@ -597,7 +606,10 @@ pub fn to_string(doc: Document) -> String {
 pub fn get(doc: Document, key: List(String)) -> Result(Value, GetError) {
   case get_value(doc, key) {
     Ok(value) -> Ok(public_value(value))
-    Error(_) -> get_table_value(doc, key)
+    // Only a missing scalar/value falls through to a table lookup; any other
+    // error is surfaced rather than masked as "not found".
+    Error(KeyNotFound(_)) -> get_table_value(doc, key)
+    Error(error) -> Error(error)
   }
 }
 
@@ -632,6 +644,9 @@ pub fn get_bool(doc: Document, key: List(String)) -> Result(Bool, GetError) {
 }
 
 /// Read a TOML float value at a key path.
+///
+/// Special floats (`inf`, `-inf`, `nan`) are not returned here; reading one
+/// yields `WrongType`. Use `get` and match on `SpecialFloatValue` for those.
 pub fn get_float(doc: Document, key: List(String)) -> Result(Float, GetError) {
   case get_value(doc, key) {
     Ok(ast.Float(value, _)) -> Ok(value)
@@ -910,6 +925,10 @@ pub fn set_datetime(
 /// (`[a, b, c]`). Existing values are replaced in place. Missing keys are
 /// inserted, creating a table header when needed.
 ///
+/// `StandardTableValue` and `ArrayOfTablesValue` items are rejected with
+/// `InvalidValue`; use `set_inline_table` or `append_array_of_tables` for
+/// table-shaped values.
+///
 /// ```gleam
 /// let assert Ok(doc) =
 ///   tomlet.set_array(tomlet.new(), ["ports"], [
@@ -927,7 +946,7 @@ pub fn set_array(
   case validate_values(items) {
     Error(error) -> Error(error)
     Ok(Nil) -> {
-      let ast_items = list.map(items, value_to_array_item)
+      use ast_items <- result.try(list.try_map(items, value_to_array_item))
       set_value(doc, key, ast.Array(ast_items, emit_array_items(ast_items)))
     }
   }
@@ -939,6 +958,9 @@ pub fn set_array(
 /// (`{ a = 1, b = 2 }`). Each entry's key path is rendered as a dotted key
 /// when it contains more than one segment. Existing values are replaced in
 /// place. Missing keys are inserted, creating a table header when needed.
+///
+/// Entry values that are `StandardTableValue` or `ArrayOfTablesValue` are
+/// rejected with `InvalidValue`; nest an `InlineTableValue` instead.
 ///
 /// ```gleam
 /// let assert Ok(doc) =
@@ -957,7 +979,7 @@ pub fn set_inline_table(
   case validate_table_entries(entries) {
     Error(error) -> Error(error)
     Ok(Nil) -> {
-      let ast_entries = list.map(entries, value_to_inline_entry)
+      use ast_entries <- result.try(list.try_map(entries, value_to_inline_entry))
       set_value(
         doc,
         key,
@@ -1002,6 +1024,18 @@ pub fn append_array_of_tables(
           case array_of_tables_key_conflicts(doc_entries, [], False, key) {
             True -> Error(KeyConflict(key))
             False -> {
+              use table_entries <- result.try(
+                list.try_map(entries, fn(entry) {
+                  let #(path, value) = entry
+                  use ast_value <- result.try(value_to_ast(value))
+                  Ok(ast.KeyValue(
+                    leading: ast.Trivia(""),
+                    key: key_from_strings(path),
+                    value: ast_value,
+                    trailing: ast.Trivia("\n"),
+                  ))
+                }),
+              )
               let new_entries =
                 list.append(
                   [
@@ -1011,26 +1045,15 @@ pub fn append_array_of_tables(
                       trivia: ast.Trivia(""),
                     )),
                   ],
-                  list.map(entries, fn(entry) {
-                    let #(path, value) = entry
-                    ast.KeyValue(
-                      leading: ast.Trivia(""),
-                      key: key_from_strings(path),
-                      value: value_to_ast(value),
-                      trailing: ast.Trivia("\n"),
-                    )
-                  }),
+                  table_entries,
                 )
-              Ok(
-                Document(
-                  ..doc,
-                  root: ast.Table(
-                    entries: list.append(doc_entries, new_entries),
-                    header: header,
-                  ),
-                  original_source: None,
+              Ok(with_root(
+                doc,
+                ast.Table(
+                  entries: list.append(doc_entries, new_entries),
+                  header: header,
                 ),
-              )
+              ))
             }
           }
         }
@@ -1038,62 +1061,54 @@ pub fn append_array_of_tables(
   }
 }
 
-fn value_to_ast(value: Value) -> ast.Value {
+// Convert a public `Value` into its AST form.
+//
+// Structural table values cannot be written through the array/inline-table
+// surface, so they are rejected here with `InvalidValue` rather than silently
+// flattened. This is the single source of truth for that rule; `validate_value`
+// enforces it earlier so callers get the error before any AST is built.
+fn value_to_ast(value: Value) -> Result(ast.Value, EditError) {
   case value {
-    StringValue(s) -> ast.String(s, ast.BasicString, basic_string_repr(s))
-    IntValue(i) -> ast.Int(i, int.to_string(i))
-    FloatValue(f) -> ast.Float(f, float.to_string(f))
+    StringValue(s) -> Ok(ast.String(s, ast.BasicString, basic_string_repr(s)))
+    IntValue(i) -> Ok(ast.Int(i, int.to_string(i)))
+    FloatValue(f) -> Ok(ast.Float(f, float.to_string(f)))
     SpecialFloatValue(s) -> {
       let #(internal, source_text) = case s {
         PositiveInfinity -> #(ast.PositiveInfinity, "inf")
         NegativeInfinity -> #(ast.NegativeInfinity, "-inf")
         NotANumber -> #(ast.NotANumber, "nan")
       }
-      ast.SpecialFloat(internal, source_text)
+      Ok(ast.SpecialFloat(internal, source_text))
     }
     BoolValue(b) -> {
       let repr = case b {
         True -> "true"
         False -> "false"
       }
-      ast.Bool(b, repr)
+      Ok(ast.Bool(b, repr))
     }
-    DateValue(d) -> ast.Date(d.text)
-    TimeValue(t) -> ast.Time(t.text)
-    DateTimeValue(d) -> ast.DateTime(d.text)
+    DateValue(d) -> Ok(ast.Date(d.text))
+    TimeValue(t) -> Ok(ast.Time(t.text))
+    DateTimeValue(d) -> Ok(ast.DateTime(d.text))
     ArrayValue(items) -> {
-      let ast_items = list.map(items, value_to_array_item)
-      ast.Array(ast_items, emit_array_items(ast_items))
+      use ast_items <- result.try(list.try_map(items, value_to_array_item))
+      Ok(ast.Array(ast_items, emit_array_items(ast_items)))
     }
     InlineTableValue(entries) -> {
-      let ast_entries = list.map(entries, value_to_inline_entry)
-      ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
+      use ast_entries <- result.try(list.try_map(entries, value_to_inline_entry))
+      Ok(ast.InlineTable(ast_entries, emit_inline_table(ast_entries)))
     }
-    StandardTableValue(entries) -> {
-      let ast_entries = list.map(entries, value_to_inline_entry)
-      ast.InlineTable(ast_entries, emit_inline_table(ast_entries))
-    }
-    ArrayOfTablesValue(items) -> {
-      let ast_items =
-        list.map(items, fn(entries) {
-          let ast_entries = list.map(entries, value_to_inline_entry)
-          ast.ArrayItem(
-            leading: ast.Trivia(""),
-            value: ast.InlineTable(ast_entries, emit_inline_table(ast_entries)),
-            trailing: ast.Trivia(""),
-          )
-        })
-      ast.Array(ast_items, emit_array_items(ast_items))
-    }
+    StandardTableValue(_) | ArrayOfTablesValue(_) -> Error(InvalidValue)
   }
 }
 
-fn value_to_array_item(value: Value) -> ast.ArrayItem {
-  ast.ArrayItem(
+fn value_to_array_item(value: Value) -> Result(ast.ArrayItem, EditError) {
+  use ast_value <- result.try(value_to_ast(value))
+  Ok(ast.ArrayItem(
     leading: ast.Trivia(""),
-    value: value_to_ast(value),
+    value: ast_value,
     trailing: ast.Trivia(""),
-  )
+  ))
 }
 
 fn validate_values(values: List(Value)) -> Result(Nil, EditError) {
@@ -1125,14 +1140,15 @@ fn validate_value(value: Value) -> Result(Nil, EditError) {
 
 fn value_to_inline_entry(
   entry: #(List(String), Value),
-) -> ast.InlineTableEntry {
+) -> Result(ast.InlineTableEntry, EditError) {
   let #(path, value) = entry
-  ast.InlineTableEntry(
+  use ast_value <- result.try(value_to_ast(value))
+  Ok(ast.InlineTableEntry(
     leading: ast.Trivia(""),
     key: key_from_strings(path),
-    value: value_to_ast(value),
+    value: ast_value,
     trailing: ast.Trivia(""),
-  )
+  ))
 }
 
 fn emit_array_items(items: List(ast.ArrayItem)) -> String {
@@ -1253,13 +1269,7 @@ pub fn remove(doc: Document, key: List(String)) -> Result(Document, EditError) {
       let #(next_entries, removed) = remove_entries(entries, [], key)
       case removed {
         True ->
-          Ok(
-            Document(
-              ..doc,
-              root: ast.Table(entries: next_entries, header: header),
-              original_source: None,
-            ),
-          )
+          Ok(with_root(doc, ast.Table(entries: next_entries, header: header)))
         False -> Error(MissingEditKey(key))
       }
     }
@@ -1292,12 +1302,7 @@ pub fn insert_comment_before(
     Error(error), _ -> Error(error)
     _, Error(error) -> Error(error)
     Ok(Nil), Ok(Nil) -> {
-      let Document(
-        root: ast.Table(entries: entries, header: header),
-        trailing_trivia:,
-        line_ending:,
-        original_source: _,
-      ) = doc
+      let Document(root: ast.Table(entries: entries, header: header), ..) = doc
       let #(updated_entries, inserted) =
         insert_comment_before_entries(
           entries,
@@ -1308,12 +1313,7 @@ pub fn insert_comment_before(
 
       case inserted {
         True ->
-          Ok(Document(
-            root: ast.Table(entries: updated_entries, header: header),
-            trailing_trivia: trailing_trivia,
-            line_ending: line_ending,
-            original_source: None,
-          ))
+          Ok(with_root(doc, ast.Table(entries: updated_entries, header: header)))
         False -> Error(MissingEditKey(key))
       }
     }
@@ -1509,42 +1509,37 @@ fn set_value(
   case validate_edit_key(key) {
     Error(error) -> Error(error)
     Ok(Nil) -> {
-      let Document(
-        root: root,
-        trailing_trivia: trailing_trivia,
-        line_ending: line_ending,
-        original_source: _,
-      ) = doc
-      let ast.Table(entries: entries, header: header) = root
+      let ast.Table(entries: entries, header: header) = doc.root
       let #(updated_entries, found) =
         update_existing_entries(entries, [], key, value)
 
       case found {
         True ->
-          Ok(Document(
-            root: ast.Table(entries: updated_entries, header: header),
-            trailing_trivia: trailing_trivia,
-            line_ending: line_ending,
-            original_source: None,
-          ))
+          Ok(with_root(doc, ast.Table(entries: updated_entries, header: header)))
         False ->
           case inline_table_blocks_key(entries, [], key) {
             True -> Error(InlineTableInsertUnsupported(key))
             False ->
               case new_key_conflicts(entries, key) {
                 True -> Error(KeyConflict(key))
-                False -> {
-                  let assert Ok(#(parent, leaf)) = parent_and_leaf(key)
-                  let new_entry = new_key_value(leaf, value)
-                  let appended_entries =
-                    append_new_entry(updated_entries, parent, new_entry)
-                  Ok(Document(
-                    root: ast.Table(entries: appended_entries, header: header),
-                    trailing_trivia: trailing_trivia,
-                    line_ending: line_ending,
-                    original_source: None,
-                  ))
-                }
+                False ->
+                  case parent_and_leaf(key) {
+                    Error(Nil) -> Error(EmptyKeyPath)
+                    Ok(#(parent, leaf)) -> {
+                      let appended_entries =
+                        insert_appended_entry(
+                          updated_entries,
+                          key,
+                          parent,
+                          leaf,
+                          value,
+                        )
+                      Ok(with_root(
+                        doc,
+                        ast.Table(entries: appended_entries, header: header),
+                      ))
+                    }
+                  }
               }
           }
       }
@@ -1712,6 +1707,60 @@ fn update_inline_entries(
   }
 }
 
+// Append a brand-new key/value, choosing between a `[parent]` header and a
+// dotted key. When `parent` is a table that exists only because it was defined
+// by dotted keys, synthesizing a `[parent]` header would be rejected by the
+// parser (a dotted-defined table cannot be re-opened with a header), so the new
+// key is emitted as a dotted key under the nearest enclosing explicit table.
+fn insert_appended_entry(
+  entries: List(ast.Entry),
+  key: List(String),
+  parent: List(String),
+  leaf: String,
+  value: ast.Value,
+) -> List(ast.Entry) {
+  let dotted_anchor = case parent {
+    [] -> Error(Nil)
+    _ -> dotted_key_context(entries, [], parent)
+  }
+  case dotted_anchor {
+    Ok(anchor) -> {
+      let relative = list.drop(key, list.length(anchor))
+      append_new_entry(entries, anchor, new_dotted_key_value(relative, value))
+    }
+    Error(Nil) -> append_new_entry(entries, parent, new_key_value(leaf, value))
+  }
+}
+
+// When `parent` is realized only through dotted keys (no explicit standard-table
+// header), return the table context (`active_table`) the dotted family lives in
+// so the new key can be appended there as a dotted key.
+fn dotted_key_context(
+  entries: List(ast.Entry),
+  active_table: List(String),
+  parent: List(String),
+) -> Result(List(String), Nil) {
+  case entries {
+    [] -> Error(Nil)
+    [entry, ..rest] -> {
+      let next_active_table = case entry {
+        ast.TableHeader(header) -> header_key(header)
+        _ -> active_table
+      }
+      case entry {
+        ast.KeyValue(key: key, ..) -> {
+          let full_key = list.append(active_table, key_to_strings(key))
+          case key_utils.starts_with(full_key, parent) && full_key != parent {
+            True -> Ok(active_table)
+            False -> dotted_key_context(rest, next_active_table, parent)
+          }
+        }
+        _ -> dotted_key_context(rest, next_active_table, parent)
+      }
+    }
+  }
+}
+
 fn append_new_entry(
   entries: List(ast.Entry),
   parent: List(String),
@@ -1874,6 +1923,15 @@ fn new_key_value(key: String, value: ast.Value) -> ast.Entry {
   )
 }
 
+fn new_dotted_key_value(path: List(String), value: ast.Value) -> ast.Entry {
+  ast.KeyValue(
+    leading: ast.Trivia(""),
+    key: key_from_strings(path),
+    value: value,
+    trailing: ast.Trivia("\n"),
+  )
+}
+
 fn new_table_header(key: List(String)) -> ast.Entry {
   ast.TableHeader(ast.Header(
     key: key_from_strings(key),
@@ -1991,6 +2049,7 @@ fn escape_basic_string_codepoints(codepoints: List(UtfCodepoint)) -> String {
 }
 
 fn padded_hex(value: Int) -> String {
+  // Total: `to_base_string` only fails on an invalid base, and 16 is valid.
   let assert Ok(hex) = int.to_base_string(value, 16)
   case string.length(hex) {
     1 -> "000" <> hex

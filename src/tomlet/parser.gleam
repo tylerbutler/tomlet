@@ -357,7 +357,7 @@ fn parse_key_value(
   case split_key_value(line) {
     Ok(#(raw_key, raw_value)) -> {
       let key_text = string.trim(raw_key)
-      let value_text = string.trim(strip_value_comments(raw_value))
+      let #(value_text, trailing) = split_value_and_trailing(raw_value)
       let value_offset =
         offset
         + string.byte_size(raw_key)
@@ -372,9 +372,7 @@ fn parse_key_value(
                   leading: ast.Trivia(""),
                   key: key,
                   value: value,
-                  trailing: ast.Trivia(
-                    trailing_after_value(raw_value, value_text) <> "\n",
-                  ),
+                  trailing: ast.Trivia(trailing <> "\n"),
                 )),
               )
             Error(error) -> Error(error)
@@ -386,10 +384,125 @@ fn parse_key_value(
   }
 }
 
-fn trailing_after_value(raw_value: String, value_text: String) -> String {
-  raw_value
-  |> string.drop_start(trim_start_offset(raw_value))
-  |> string.drop_start(string.length(value_text))
+// Split the text after `=` into the value's source span and the trailing
+// trivia (surrounding whitespace and any inline comment plus the newline).
+//
+// Arrays and inline tables can carry interior comments and span multiple lines,
+// so their span is found by scanning to the matching close bracket; the full
+// source (comments included) is kept so it round-trips. Scalars and strings
+// cannot contain a top-level `#`, so the value is a contiguous prefix that the
+// comment stripper recovers directly.
+fn split_value_and_trailing(raw_value: String) -> #(String, String) {
+  let trimmed_start = string.drop_start(raw_value, trim_start_offset(raw_value))
+  case value_starts_span(trimmed_start) {
+    True -> {
+      let value_source =
+        string.slice(trimmed_start, 0, value_span_length(trimmed_start))
+      let trailing =
+        string.drop_start(trimmed_start, string.length(value_source))
+      // Anything other than whitespace and a comment after the close bracket is
+      // a second token on the line, i.e. invalid TOML. Fall back to the scalar
+      // split so the whole text is parsed as one value and rejected.
+      case trailing_is_trivia(trailing) {
+        True -> #(value_source, trailing)
+        False -> scalar_split(trimmed_start)
+      }
+    }
+    False -> scalar_split(trimmed_start)
+  }
+}
+
+fn scalar_split(trimmed_start: String) -> #(String, String) {
+  let value_text = string.trim(strip_value_comments(trimmed_start))
+  let trailing = string.drop_start(trimmed_start, string.length(value_text))
+  #(value_text, trailing)
+}
+
+fn trailing_is_trivia(text: String) -> Bool {
+  case string.trim(text) {
+    "" -> True
+    rest -> string.starts_with(rest, "#")
+  }
+}
+
+fn value_starts_span(text: String) -> Bool {
+  string.starts_with(text, "[") || string.starts_with(text, "{")
+}
+
+type SpanState {
+  SpanOutside
+  SpanBasic
+  SpanLiteral
+  SpanMultiBasic
+  SpanMultiLiteral
+  SpanComment
+}
+
+// Number of graphemes the value occupies, found by tracking string/comment
+// state and bracket nesting until the construct returns to the top level.
+fn value_span_length(text: String) -> Int {
+  scan_value_span(string.to_graphemes(text), SpanOutside, 0, 0)
+}
+
+fn scan_value_span(
+  chars: List(String),
+  state: SpanState,
+  depth: Int,
+  count: Int,
+) -> Int {
+  case count > 0 && state == SpanOutside && depth == 0 {
+    True -> count
+    False ->
+      case state, chars {
+        _, [] -> count
+
+        SpanOutside, ["\"", "\"", "\"", ..rest] ->
+          scan_value_span(rest, SpanMultiBasic, depth, count + 3)
+        SpanOutside, ["'", "'", "'", ..rest] ->
+          scan_value_span(rest, SpanMultiLiteral, depth, count + 3)
+        SpanOutside, ["\"", ..rest] ->
+          scan_value_span(rest, SpanBasic, depth, count + 1)
+        SpanOutside, ["'", ..rest] ->
+          scan_value_span(rest, SpanLiteral, depth, count + 1)
+        SpanOutside, ["#", ..rest] ->
+          scan_value_span(rest, SpanComment, depth, count + 1)
+        SpanOutside, ["[", ..rest] | SpanOutside, ["{", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth + 1, count + 1)
+        SpanOutside, ["]", ..rest] | SpanOutside, ["}", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth - 1, count + 1)
+        SpanOutside, [_, ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 1)
+
+        SpanComment, ["\n", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 1)
+        SpanComment, [_, ..rest] ->
+          scan_value_span(rest, SpanComment, depth, count + 1)
+
+        SpanBasic, ["\\", _, ..rest] ->
+          scan_value_span(rest, SpanBasic, depth, count + 2)
+        SpanBasic, ["\"", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 1)
+        SpanBasic, [_, ..rest] ->
+          scan_value_span(rest, SpanBasic, depth, count + 1)
+
+        SpanLiteral, ["'", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 1)
+        SpanLiteral, [_, ..rest] ->
+          scan_value_span(rest, SpanLiteral, depth, count + 1)
+
+        SpanMultiBasic, ["\\", _, ..rest] ->
+          scan_value_span(rest, SpanMultiBasic, depth, count + 2)
+        SpanMultiBasic, ["\"", "\"", "\"", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 3)
+        SpanMultiBasic, [_, ..rest] ->
+          scan_value_span(rest, SpanMultiBasic, depth, count + 1)
+
+        SpanMultiLiteral, ["'", "'", "'", ..rest] ->
+          scan_value_span(rest, SpanOutside, depth, count + 3)
+        SpanMultiLiteral, [_, ..rest] ->
+          scan_value_span(rest, SpanMultiLiteral, depth, count + 1)
+      }
+  }
 }
 
 fn parse_key(text: String) -> Result(ast.Key, Nil) {
