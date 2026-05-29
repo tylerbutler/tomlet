@@ -77,3 +77,39 @@ pub fn remove_missing_dependency_errors_test() {
     Error(app_error.EditError(tomlet.MissingEditKey(["dependencies", "nope"]))),
   )
 }
+
+pub fn get_path_reads_value_test() {
+  commands.get_path(parse(sample), "name")
+  |> should.equal(Ok(tomlet.StringValue("demo_app")))
+}
+
+pub fn get_path_nested_test() {
+  commands.get_path(parse(sample), "dependencies.gleam_stdlib")
+  |> should.equal(Ok(tomlet.StringValue(">= 0.44.0")))
+}
+
+pub fn get_path_missing_errors_test() {
+  commands.get_path(parse(sample), "nope")
+  |> should.equal(Error(app_error.GetError(tomlet.KeyNotFound(["nope"]))))
+}
+
+pub fn set_path_writes_value_test() {
+  let assert Ok(doc) = commands.set_path(parse(sample), "name", "renamed")
+  tomlet.get_string(doc, ["name"])
+  |> should.equal(Ok("renamed"))
+}
+
+pub fn value_to_display_string_test() {
+  commands.value_to_display(tomlet.StringValue("hello"))
+  |> should.equal("hello")
+}
+
+pub fn value_to_display_int_test() {
+  commands.value_to_display(tomlet.IntValue(42))
+  |> should.equal("42")
+}
+
+pub fn value_to_display_bool_test() {
+  commands.value_to_display(tomlet.BoolValue(True))
+  |> should.equal("true")
+}

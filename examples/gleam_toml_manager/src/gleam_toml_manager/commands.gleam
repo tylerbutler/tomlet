@@ -1,4 +1,7 @@
+import gleam/float
+import gleam/int
 import gleam/result
+import gleam/string
 import gleam_toml_manager/app_error.{type AppError}
 import gleam_toml_manager/semver
 import tomlet
@@ -52,4 +55,48 @@ pub fn remove_dependency(
 ) -> Result(tomlet.Document, AppError) {
   tomlet.remove(doc, ["dependencies", name])
   |> result.map_error(app_error.EditError)
+}
+
+/// Split a dotted path string into a tomlet key path.
+pub fn split_path(path: String) -> List(String) {
+  string.split(path, ".")
+}
+
+/// Read the value at a dotted path (read-only).
+pub fn get_path(
+  doc: tomlet.Document,
+  path: String,
+) -> Result(tomlet.Value, AppError) {
+  tomlet.get(doc, split_path(path))
+  |> result.map_error(app_error.GetError)
+}
+
+/// Set a string value at a dotted path.
+pub fn set_path(
+  doc: tomlet.Document,
+  path: String,
+  value: String,
+) -> Result(tomlet.Document, AppError) {
+  tomlet.set_string(doc, split_path(path), value)
+  |> result.map_error(app_error.EditError)
+}
+
+/// Render a value for terminal display. Scalars print their value; structural
+/// values print a typed placeholder.
+pub fn value_to_display(value: tomlet.Value) -> String {
+  case value {
+    tomlet.StringValue(s) -> s
+    tomlet.IntValue(i) -> int.to_string(i)
+    tomlet.FloatValue(f) -> float.to_string(f)
+    tomlet.BoolValue(True) -> "true"
+    tomlet.BoolValue(False) -> "false"
+    tomlet.DateValue(d) -> tomlet.date_to_string(d)
+    tomlet.TimeValue(t) -> tomlet.time_to_string(t)
+    tomlet.DateTimeValue(dt) -> tomlet.datetime_to_string(dt)
+    tomlet.SpecialFloatValue(_) -> "<special float>"
+    tomlet.ArrayValue(_) -> "<array>"
+    tomlet.InlineTableValue(_) -> "<inline table>"
+    tomlet.StandardTableValue(_) -> "<table>"
+    tomlet.ArrayOfTablesValue(_) -> "<array of tables>"
+  }
 }
