@@ -137,6 +137,42 @@ pub fn get_returns_public_standard_table_values_test() {
     )
 }
 
+pub fn table_keys_returns_standard_table_keys_in_order_test() {
+  let input = "[package]\nname = \"tomato\"\nversion = \"0.1.0\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.table_keys(doc, ["package"]) == Ok(["name", "version"])
+}
+
+pub fn table_keys_returns_inline_table_keys_in_order_test() {
+  let input = "package = { name = \"tomato\", version = \"0.1.0\" }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.table_keys(doc, ["package"]) == Ok(["name", "version"])
+}
+
+pub fn table_keys_deduplicates_dotted_and_subtable_keys_test() {
+  let input =
+    "[server]\nhost = \"localhost\"\nlog.level = \"info\"\nlog.file = \"out\"\n\n[server.tcp]\nport = 80\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.table_keys(doc, ["server"]) == Ok(["host", "log", "tcp"])
+}
+
+pub fn table_keys_returns_key_not_found_for_missing_path_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  assert tomlet.table_keys(doc, ["missing"])
+    == Error(tomlet.KeyNotFound(["missing"]))
+}
+
+pub fn table_keys_returns_wrong_type_for_non_table_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+
+  let assert Error(tomlet.WrongType(["name"], _)) =
+    tomlet.table_keys(doc, ["name"])
+}
+
 pub fn parse_error_offsets_use_original_bytes_after_crlf_test() {
   assert tomlet.parse("ok = 1\r\nbad = ???\r\n")
     == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 14))

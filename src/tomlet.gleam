@@ -720,6 +720,50 @@ pub fn get_datetime(
   }
 }
 
+/// Return the top-level keys of the table at a key path, in source order.
+///
+/// Works on standard tables (`[table]`) and inline tables (`{ ... }`).
+/// Dotted keys and subtables collapse to their first segment, so
+/// `a.b` and `[t.sub]` both contribute a single `"a"` / `"sub"` key, and
+/// duplicates are removed while preserving first-occurrence order.
+///
+/// A missing path yields `KeyNotFound`. A path that resolves to a non-table
+/// value (including an array of tables) yields `WrongType`. The
+/// `ExpectedType` reported for the non-table case is a placeholder until a
+/// dedicated `ExpectedTable` variant is introduced (see issue #28); match on
+/// the `WrongType` constructor rather than the specific `ExpectedType`.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.parse("[dependencies]\ngleam_stdlib = \">= 0.40.0\"\n")
+/// tomlet.table_keys(doc, ["dependencies"])
+/// // -> Ok(["gleam_stdlib"])
+/// ```
+pub fn table_keys(
+  doc: Document,
+  path: List(String),
+) -> Result(List(String), GetError) {
+  case get(doc, path) {
+    Ok(StandardTableValue(entries)) -> Ok(top_level_keys(entries))
+    Ok(InlineTableValue(entries)) -> Ok(top_level_keys(entries))
+    Ok(_) -> Error(WrongType(path, ExpectedString))
+    Error(error) -> Error(error)
+  }
+}
+
+// Collect the first segment of each entry key, preserving source order and
+// removing duplicates introduced by dotted keys or subtables.
+fn top_level_keys(entries: List(#(List(String), Value))) -> List(String) {
+  entries
+  |> list.filter_map(fn(entry) {
+    case entry.0 {
+      [first, ..] -> Ok(first)
+      [] -> Error(Nil)
+    }
+  })
+  |> list.unique
+}
+
 /// Read a string from a `Value`.
 ///
 /// Mirrors `get_string`, but operates on a `Value` already obtained via `get`,
