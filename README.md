@@ -1,5 +1,8 @@
 # tomlet
 
+[![Package Version](https://img.shields.io/hexpm/v/tomlet)](https://hex.pm/packages/tomlet)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/tomlet/)
+
 A round-tripping TOML parser and writer for Gleam.
 
 Tomlet parses TOML 1.0.0 into an opaque document that retains comments, key
