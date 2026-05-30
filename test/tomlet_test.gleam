@@ -1028,3 +1028,67 @@ pub fn value_get_into_scalar_fails_test() {
 
   assert tomlet.value_get(value, ["x"]) == Error(tomlet.KeyNotFound(["x"]))
 }
+
+// --- Indexed descent in document-level get (issue #22) ---
+
+pub fn get_indexes_into_array_of_tables_test() {
+  let input =
+    "[[packages]]\nname = \"gleam_stdlib\"\n[[packages]]\nname = \"gleam_otp\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["packages", "0", "name"])
+    == Ok(tomlet.StringValue("gleam_stdlib"))
+  assert tomlet.get(doc, ["packages", "1", "name"])
+    == Ok(tomlet.StringValue("gleam_otp"))
+}
+
+pub fn get_indexes_into_array_test() {
+  let assert Ok(doc) = tomlet.parse("nums = [10, 20, 30]\n")
+
+  assert tomlet.get(doc, ["nums", "1"]) == Ok(tomlet.IntValue(20))
+}
+
+pub fn get_index_returns_whole_table_test() {
+  let input = "[[packages]]\nname = \"gleam_stdlib\"\nversion = \"0.40.0\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["packages", "0"])
+    == Ok(
+      tomlet.StandardTableValue([
+        #(["name"], tomlet.StringValue("gleam_stdlib")),
+        #(["version"], tomlet.StringValue("0.40.0")),
+      ]),
+    )
+}
+
+pub fn get_indexes_array_nested_in_array_of_tables_test() {
+  let input =
+    "[[packages]]\nname = \"gleam_stdlib\"\nrequirements = [\"gleam_otp\"]\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["packages", "0", "requirements", "0"])
+    == Ok(tomlet.StringValue("gleam_otp"))
+}
+
+pub fn get_index_out_of_range_test() {
+  let input = "[[packages]]\nname = \"gleam_stdlib\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  assert tomlet.get(doc, ["packages", "5", "name"])
+    == Error(tomlet.KeyNotFound(["packages", "5", "name"]))
+}
+
+pub fn get_non_numeric_index_into_array_test() {
+  let assert Ok(doc) = tomlet.parse("nums = [10, 20, 30]\n")
+
+  assert tomlet.get(doc, ["nums", "x"])
+    == Error(tomlet.KeyNotFound(["nums", "x"]))
+}
+
+pub fn get_indexed_typed_read_composes_with_as_string_test() {
+  let input = "[[packages]]\nname = \"gleam_stdlib\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+
+  let value = tomlet.get(doc, ["packages", "0", "name"])
+  assert value == Ok(tomlet.StringValue("gleam_stdlib"))
+}
