@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-    Edit support for dates, times, arrays, inline tables, and arrays of tables
-
-    `date_from_string`, `time_from_string`, and `datetime_from_string` validate their input and produce the opaque `Date`, `Time`, and `DateTime` values, reporting invalid lexical forms as a `FormatError`. The setters `set_date`, `set_time`, `set_datetime`, `set_array`, and `set_inline_table` write these values at a key path, and `append_array_of_tables` appends a table to an array of tables, creating the array on first use.
-time: 2026-05-25T22:11:09.000000000-07:00
