@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+    Value-level read accessors for decoding nested data
+
+    `as_string`, `as_int`, `as_bool`, `as_float`, `as_date`, `as_time`, and `as_datetime` read scalars from a `Value` already obtained via `get`, and `value_get` descends into table- and array-shaped values by key or non-negative numeric index — so nested data can be decoded without hand-walking the entry assoc lists or returning to the document root.
+time: 2026-05-30T12:00:00.000000000-07:00
