@@ -598,6 +598,11 @@ fn with_root(doc: Document, root: ast.Table) -> Document {
 /// Use `get` instead of the typed `get_*` helpers when you need to inspect
 /// arrays, inline tables, standard tables, arrays of tables, or special floats.
 ///
+/// Path segments that name an array or array of tables can be followed by a
+/// non-negative decimal index to descend into it, e.g.
+/// `get(doc, ["packages", "0", "name"])`. For a typed read of an indexed path,
+/// compose with the `as_*` converters: `get(doc, path) |> result.try(as_string)`.
+///
 /// ```gleam
 /// let assert Ok(doc) =
 ///   tomlet.parse("package = { name = \"tomato\", downloads = 42 }\n")
@@ -610,11 +615,37 @@ fn with_root(doc: Document, root: ast.Table) -> Document {
 pub fn get(doc: Document, key: List(String)) -> Result(Value, GetError) {
   case get_value(doc, key) {
     Ok(value) -> Ok(public_value(value))
-    // Only a missing scalar/value falls through to a table lookup; any other
-    // error is surfaced rather than masked as "not found".
-    Error(KeyNotFound(_)) -> get_table_value(doc, key)
+    // A missing scalar/value falls through to a table lookup, then to indexed
+    // descent (e.g. `["packages", "0", "name"]`); any other error is surfaced
+    // rather than masked as "not found".
+    Error(KeyNotFound(_)) ->
+      case get_table_value(doc, key) {
+        Ok(value) -> Ok(value)
+        Error(KeyNotFound(_)) -> get_indexed(doc, key)
+        Error(error) -> Error(error)
+      }
     Error(error) -> Error(error)
   }
+}
+
+// Resolve a key path that descends into arrays or arrays of tables by index
+// (e.g. `["packages", "0", "name"]`). The longest prefix that resolves to a
+// value via `get` is found, then the remaining segments are walked with
+// `value_get`, which shares the same index rules. Returns `KeyNotFound` with
+// the full key when no split resolves.
+fn get_indexed(doc: Document, key: List(String)) -> Result(Value, GetError) {
+  get_indexed_loop(doc, key, list.length(key) - 1)
+}
+
+fn get_indexed_loop(
+  doc: Document,
+  key: List(String),
+  split: Int,
+) -> Result(Value, GetError) {
+  use <- bool.guard(when: split < 1, return: Error(KeyNotFound(key)))
+  get(doc, list.take(key, split))
+  |> result.try(value_get(_, list.drop(key, split)))
+  |> result.lazy_or(fn() { get_indexed_loop(doc, key, split - 1) })
 }
 
 /// Read a TOML string value at a key path.
