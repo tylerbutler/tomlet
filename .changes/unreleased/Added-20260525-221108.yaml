@@ -2,5 +2,5 @@ kind: Added
 body: |-
     Typed date, time, and date-time accessors
 
-    `get_date`, `get_time`, and `get_datetime` join the existing typed accessors and return the opaque `Date`, `Time`, and `DateTime` values. Errors follow the existing `GetError` shape. Closes #13.
+    `get_date`, `get_time`, and `get_datetime` read the opaque `Date`, `Time`, and `DateTime` values, reporting failures through `GetError`.
 time: 2026-05-25T22:11:08.000000000-07:00
