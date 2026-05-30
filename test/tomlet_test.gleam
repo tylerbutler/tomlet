@@ -888,3 +888,143 @@ pub fn append_array_of_tables_rejects_duplicate_entry_paths_test() {
     ])
     == Error(tomlet.KeyConflict(["name"]))
 }
+
+// --- Value-level accessors (issue #22) ---
+
+pub fn as_string_extracts_string_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomato\"\n")
+  let assert Ok(value) = tomlet.get(doc, ["name"])
+
+  assert tomlet.as_string(value) == Ok("tomato")
+}
+
+pub fn as_string_wrong_type_test() {
+  let assert Ok(doc) = tomlet.parse("answer = 42\n")
+  let assert Ok(value) = tomlet.get(doc, ["answer"])
+
+  assert tomlet.as_string(value)
+    == Error(tomlet.WrongType([], tomlet.ExpectedString))
+}
+
+pub fn as_int_extracts_int_test() {
+  let assert Ok(doc) = tomlet.parse("answer = 42\n")
+  let assert Ok(value) = tomlet.get(doc, ["answer"])
+
+  assert tomlet.as_int(value) == Ok(42)
+  assert tomlet.as_string(value)
+    == Error(tomlet.WrongType([], tomlet.ExpectedString))
+}
+
+pub fn as_bool_extracts_bool_test() {
+  let assert Ok(doc) = tomlet.parse("enabled = true\n")
+  let assert Ok(value) = tomlet.get(doc, ["enabled"])
+
+  assert tomlet.as_bool(value) == Ok(True)
+}
+
+pub fn as_float_extracts_float_test() {
+  let assert Ok(doc) = tomlet.parse("ratio = 3.14\n")
+  let assert Ok(value) = tomlet.get(doc, ["ratio"])
+
+  assert tomlet.as_float(value) == Ok(3.14)
+}
+
+pub fn as_float_rejects_special_float_test() {
+  let assert Ok(doc) = tomlet.parse("x = inf\n")
+  let assert Ok(value) = tomlet.get(doc, ["x"])
+
+  assert tomlet.as_float(value)
+    == Error(tomlet.WrongType([], tomlet.ExpectedFloat))
+}
+
+pub fn as_date_extracts_date_test() {
+  let assert Ok(doc) = tomlet.parse("d = 1979-05-27\n")
+  let assert Ok(value) = tomlet.get(doc, ["d"])
+
+  assert tomlet.as_date(value) == tomlet.get_date(doc, ["d"])
+}
+
+pub fn as_time_extracts_time_test() {
+  let assert Ok(doc) = tomlet.parse("t = 07:32:00\n")
+  let assert Ok(value) = tomlet.get(doc, ["t"])
+
+  assert tomlet.as_time(value) == tomlet.get_time(doc, ["t"])
+}
+
+pub fn as_datetime_extracts_datetime_test() {
+  let assert Ok(doc) = tomlet.parse("dt = 1979-05-27T07:32:00Z\n")
+  let assert Ok(value) = tomlet.get(doc, ["dt"])
+
+  assert tomlet.as_datetime(value) == tomlet.get_datetime(doc, ["dt"])
+}
+
+pub fn value_get_empty_path_is_identity_test() {
+  let assert Ok(doc) = tomlet.parse("answer = 42\n")
+  let assert Ok(value) = tomlet.get(doc, ["answer"])
+
+  assert tomlet.value_get(value, []) == Ok(tomlet.IntValue(42))
+}
+
+pub fn value_get_descends_into_table_test() {
+  let assert Ok(doc) = tomlet.parse("package = { name = \"tomato\" }\n")
+  let assert Ok(value) = tomlet.get(doc, ["package"])
+
+  assert tomlet.value_get(value, ["name"]) == Ok(tomlet.StringValue("tomato"))
+}
+
+pub fn value_get_descends_into_nested_standard_table_test() {
+  let input = "[server]\nhost = \"localhost\"\n[server.tls]\nenabled = true\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(value) = tomlet.get(doc, ["server"])
+
+  assert tomlet.value_get(value, ["tls", "enabled"])
+    == Ok(tomlet.BoolValue(True))
+}
+
+pub fn value_get_descends_to_subtable_test() {
+  let input = "[server]\nhost = \"localhost\"\n[server.tls]\nenabled = true\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(value) = tomlet.get(doc, ["server"])
+
+  assert tomlet.value_get(value, ["tls"])
+    == Ok(tomlet.StandardTableValue([#(["enabled"], tomlet.BoolValue(True))]))
+}
+
+pub fn value_get_indexes_array_of_tables_test() {
+  let input =
+    "[[packages]]\nname = \"gleam_stdlib\"\n[[packages]]\nname = \"gleam_otp\"\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(value) = tomlet.get(doc, ["packages"])
+
+  assert tomlet.value_get(value, ["1", "name"])
+    == Ok(tomlet.StringValue("gleam_otp"))
+}
+
+pub fn value_get_indexes_array_test() {
+  let assert Ok(doc) = tomlet.parse("nums = [10, 20, 30]\n")
+  let assert Ok(value) = tomlet.get(doc, ["nums"])
+
+  assert tomlet.value_get(value, ["2"]) == Ok(tomlet.IntValue(30))
+}
+
+pub fn value_get_missing_key_test() {
+  let assert Ok(doc) = tomlet.parse("package = { name = \"tomato\" }\n")
+  let assert Ok(value) = tomlet.get(doc, ["package"])
+
+  assert tomlet.value_get(value, ["missing"])
+    == Error(tomlet.KeyNotFound(["missing"]))
+}
+
+pub fn value_get_index_out_of_range_test() {
+  let assert Ok(doc) = tomlet.parse("nums = [10, 20]\n")
+  let assert Ok(value) = tomlet.get(doc, ["nums"])
+
+  assert tomlet.value_get(value, ["5"]) == Error(tomlet.KeyNotFound(["5"]))
+}
+
+pub fn value_get_into_scalar_fails_test() {
+  let assert Ok(doc) = tomlet.parse("answer = 42\n")
+  let assert Ok(value) = tomlet.get(doc, ["answer"])
+
+  assert tomlet.value_get(value, ["x"]) == Error(tomlet.KeyNotFound(["x"]))
+}

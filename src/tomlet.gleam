@@ -689,6 +689,137 @@ pub fn get_datetime(
   }
 }
 
+/// Read a string from a `Value`.
+///
+/// Mirrors `get_string`, but operates on a `Value` already obtained via `get`,
+/// so nested data can be decoded without re-walking from the document root. On
+/// a type mismatch the error carries an empty key path, since a bare `Value`
+/// has no path context.
+pub fn as_string(value: Value) -> Result(String, GetError) {
+  case value {
+    StringValue(text) -> Ok(text)
+    _ -> Error(WrongType([], ExpectedString))
+  }
+}
+
+/// Read an integer from a `Value`. See `as_string` for the error convention.
+pub fn as_int(value: Value) -> Result(Int, GetError) {
+  case value {
+    IntValue(number) -> Ok(number)
+    _ -> Error(WrongType([], ExpectedInt))
+  }
+}
+
+/// Read a boolean from a `Value`. See `as_string` for the error convention.
+pub fn as_bool(value: Value) -> Result(Bool, GetError) {
+  case value {
+    BoolValue(boolean) -> Ok(boolean)
+    _ -> Error(WrongType([], ExpectedBool))
+  }
+}
+
+/// Read a float from a `Value`. See `as_string` for the error convention.
+///
+/// Special floats (`inf`, `-inf`, `nan`) are not returned here; reading one
+/// yields `WrongType`. Match on `SpecialFloatValue` for those.
+pub fn as_float(value: Value) -> Result(Float, GetError) {
+  case value {
+    FloatValue(number) -> Ok(number)
+    _ -> Error(WrongType([], ExpectedFloat))
+  }
+}
+
+/// Read a local date from a `Value`. See `as_string` for the error convention.
+pub fn as_date(value: Value) -> Result(Date, GetError) {
+  case value {
+    DateValue(date) -> Ok(date)
+    _ -> Error(WrongType([], ExpectedDate))
+  }
+}
+
+/// Read a local time from a `Value`. See `as_string` for the error convention.
+pub fn as_time(value: Value) -> Result(Time, GetError) {
+  case value {
+    TimeValue(time) -> Ok(time)
+    _ -> Error(WrongType([], ExpectedTime))
+  }
+}
+
+/// Read a date-time from a `Value`. See `as_string` for the error convention.
+pub fn as_datetime(value: Value) -> Result(DateTime, GetError) {
+  case value {
+    DateTimeValue(datetime) -> Ok(datetime)
+    _ -> Error(WrongType([], ExpectedDateTime))
+  }
+}
+
+/// Descend into a `Value` by key path without returning to the document root.
+///
+/// Table-shaped values are descended by key; arrays and arrays of tables are
+/// descended by a non-negative decimal index (e.g. `"0"`). An empty path
+/// returns the value unchanged. A missing key, a non-numeric or out-of-range
+/// index, or descent into a scalar all yield `KeyNotFound`.
+///
+/// ```gleam
+/// let assert Ok(doc) =
+///   tomlet.parse("[[packages]]\nname = \"gleam_stdlib\"\n")
+/// let assert Ok(packages) = tomlet.get(doc, ["packages"])
+/// tomlet.value_get(packages, ["0", "name"])
+/// // -> Ok(tomlet.StringValue("gleam_stdlib"))
+/// ```
+pub fn value_get(value: Value, key: List(String)) -> Result(Value, GetError) {
+  case key, value {
+    [], _ -> Ok(value)
+    [head, ..rest], InlineTableValue(entries) ->
+      value_get_table(entries, head, rest, key)
+    [head, ..rest], StandardTableValue(entries) ->
+      value_get_table(entries, head, rest, key)
+    [head, ..rest], ArrayValue(items) -> value_get_index(items, head, rest, key)
+    [head, ..rest], ArrayOfTablesValue(tables) ->
+      value_get_index(list.map(tables, StandardTableValue), head, rest, key)
+    _, _ -> Error(KeyNotFound(key))
+  }
+}
+
+fn value_get_table(
+  entries: List(#(List(String), Value)),
+  head: String,
+  rest: List(String),
+  key: List(String),
+) -> Result(Value, GetError) {
+  let matched =
+    list.filter_map(entries, fn(entry) {
+      let #(entry_key, entry_value) = entry
+      case entry_key {
+        [first, ..tail] if first == head -> Ok(#(tail, entry_value))
+        _ -> Error(Nil)
+      }
+    })
+  case matched, rest {
+    [], _ -> Error(KeyNotFound(key))
+    [#([], inner)], [] -> Ok(inner)
+    [#([], inner)], _ -> value_get(inner, rest)
+    _, [] -> Ok(StandardTableValue(matched))
+    _, _ -> value_get(StandardTableValue(matched), rest)
+  }
+}
+
+fn value_get_index(
+  items: List(Value),
+  index_text: String,
+  rest: List(String),
+  key: List(String),
+) -> Result(Value, GetError) {
+  case int.parse(index_text) {
+    Ok(index) if index >= 0 ->
+      case items |> list.drop(index) |> list.first {
+        Ok(item) -> value_get(item, rest)
+        Error(Nil) -> Error(KeyNotFound(key))
+      }
+    _ -> Error(KeyNotFound(key))
+  }
+}
+
 fn get_value(doc: Document, key: List(String)) -> Result(ast.Value, GetError) {
   path.get(doc.root, key)
   |> result.replace_error(KeyNotFound(key))
