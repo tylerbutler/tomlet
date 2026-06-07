@@ -12,7 +12,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v6
 
       - name: Setup environment
         uses: ./.github/actions/setup
@@ -21,3 +21,67 @@ jobs:
         run: gleam publish --yes
         env:
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
+
+  sbom:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Attest SBOM
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v6
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+
+      - name: Setup licence_audit
+        uses: tylerbutler/actions/setup-licence-audit@ee7def5950abcf0a519add705a95719ab345c05e # ratchet:tylerbutler/actions/setup-licence-audit@main
+        with:
+          version: v0.2.0
+          setup-beam: "false"
+
+      - name: Generate CycloneDX SBOM
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)"
+          export SOURCE_DATE_EPOCH
+          licence_audit sbom --reproducible --output="dist/tomlet-${REF_NAME}.cdx.json"
+
+      - name: Create source archive
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --prefix="tomlet-${REF_NAME}/" \
+            -o "dist/tomlet-${REF_NAME}.tar.gz" HEAD
+
+      - name: Attest SBOM
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # ratchet:actions/attest@v4
+        with:
+          subject-path: dist/tomlet-${{ github.ref_name }}.tar.gz
+          sbom-path: dist/tomlet-${{ github.ref_name }}.cdx.json
+
+      - name: Attach SBOM to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # The release is created by auto-tag.yml; retry briefly in case it
+          # hasn't been published by the time this job runs.
+          for i in 1 2 3 4 5; do
+            if gh release view "$REF_NAME" >/dev/null 2>&1; then
+              break
+            fi
+            echo "Release $REF_NAME not yet available, sleeping..."
+            sleep 10
+          done
+          gh release upload "$REF_NAME" \
+            "dist/tomlet-${REF_NAME}.cdx.json" \
+            "dist/tomlet-${REF_NAME}.tar.gz" \
+            --clobber

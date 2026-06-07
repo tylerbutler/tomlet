@@ -1,0 +1,6 @@
+kind: Security
+body: |-
+    Generate and attest a CycloneDX SBOM during release
+
+    The release workflow now runs `licence_audit sbom` to produce a reproducible CycloneDX 1.6 SBOM, signs a SBOM attestation for the release source archive via `actions/attest`, and uploads both the SBOM and source archive to the GitHub Release.
+time: 2026-06-06T20:00:00.000000000-07:00
