@@ -35,6 +35,10 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
+        with:
+          # licence_audit v0.2.0 is compiled with OTP 28; its BEAM files can't
+          # be loaded by older runtimes (OTP 27 fails with invalid_chunk ExpT).
+          otp-version: "28"
 
       - name: Setup licence_audit
         uses: tylerbutler/actions/setup-licence-audit@ee7def5950abcf0a519add705a95719ab345c05e # ratchet:tylerbutler/actions/setup-licence-audit@main
