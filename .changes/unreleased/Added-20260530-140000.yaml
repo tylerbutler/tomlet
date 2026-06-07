@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-    `table_keys` helper to enumerate a table's top-level keys
-
-    `table_keys(doc, path)` returns the top-level keys of a standard or inline table in source order, without pattern-matching the table value and unwrapping each entry's key path by hand. Dotted keys and subtables collapse to their first segment, deduplicated. Missing paths yield `KeyNotFound`; non-table values yield `WrongType`.
-time: 2026-05-30T14:00:00.000000000-07:00
