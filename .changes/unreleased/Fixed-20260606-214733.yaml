@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-    Validate the SBOM-attestation release pipeline
-
-    A no-op changelog entry to force a patch release so the publish and SBOM-attestation workflows can be exercised end to end with the OTP 28 fix in place. No code or behavior changes.
-time: 2026-06-06T21:47:33.468873692-07:00
