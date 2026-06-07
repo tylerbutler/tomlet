@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-    Exercise the release pipeline end to end
-
-    A no-op changelog entry to force a patch release so the auto-tag, publish, and SBOM-attestation workflows can be validated after the release-machinery fixes. No code or behavior changes.
-time: 2026-06-06T21:35:59.979601254-07:00
