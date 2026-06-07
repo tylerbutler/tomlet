@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-    Indexed descent into arrays and arrays of tables in `get`
-
-    `get` now follows a non-negative decimal index past an array or array-of-tables segment, so paths like `get(doc, ["packages", "0", "name"])` resolve without first fetching the container and walking it by hand. Typed indexed reads compose with the value-level converters, e.g. `get(doc, path) |> result.try(as_string)`.
-time: 2026-05-30T13:00:00.000000000-07:00
