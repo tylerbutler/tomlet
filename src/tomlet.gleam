@@ -302,6 +302,49 @@ pub fn parse(input: String) -> Result(Document, ParseError) {
   parse_string(input)
 }
 
+/// Parse a standalone TOML value literal.
+///
+/// The returned value uses Tomlet's stable public `Value` variants. Trailing
+/// non-comment syntax is rejected rather than ignored.
+///
+/// ```gleam
+/// tomlet.parse_value("\"tomato\"")
+/// // -> Ok(tomlet.StringValue("tomato"))
+///
+/// tomlet.parse_value("[8000, 8001]")
+/// // -> Ok(tomlet.ArrayValue([tomlet.IntValue(8000), tomlet.IntValue(8001)]))
+/// ```
+pub fn parse_value(input: String) -> Result(Value, ParseError) {
+  let key = "__tomlet_value__"
+  let prefix = key <> " = "
+  let source = prefix <> input <> "\n"
+  case parse_string(source) {
+    Ok(doc) ->
+      case get(doc, [key]) {
+        Ok(value) -> Ok(value)
+        Error(_) -> Error(InvalidSyntax(InvalidToml, 0))
+      }
+    Error(error) -> Error(parse_value_error(error, string.byte_size(prefix)))
+  }
+}
+
+fn parse_value_error(error: ParseError, prefix_size: Int) -> ParseError {
+  case error {
+    InvalidEncoding -> InvalidEncoding
+    InvalidSyntax(kind, offset) ->
+      InvalidSyntax(kind, value_offset(offset, prefix_size))
+    DuplicateKey(_, offset) ->
+      InvalidSyntax(InvalidToml, value_offset(offset, prefix_size))
+  }
+}
+
+fn value_offset(offset: Int, prefix_size: Int) -> Int {
+  case offset < prefix_size {
+    True -> 0
+    False -> offset - prefix_size
+  }
+}
+
 /// Parse TOML bytes into a document.
 ///
 /// This validates UTF-8 input and accepts a UTF-8 byte order mark only at the

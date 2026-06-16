@@ -110,6 +110,43 @@ pub fn get_returns_public_inline_table_values_test() {
     == Ok(tomlet.IntValue(42))
 }
 
+pub fn parse_value_returns_public_scalar_values_test() {
+  assert tomlet.parse_value("\"tomato\"") == Ok(tomlet.StringValue("tomato"))
+  assert tomlet.parse_value("42") == Ok(tomlet.IntValue(42))
+  assert tomlet.parse_value("true") == Ok(tomlet.BoolValue(True))
+  assert tomlet.parse_value("3.14") == Ok(tomlet.FloatValue(3.14))
+  assert tomlet.parse_value("inf")
+    == Ok(tomlet.SpecialFloatValue(tomlet.PositiveInfinity))
+}
+
+pub fn parse_value_returns_public_date_time_and_structured_values_test() {
+  let assert Ok(tomlet.DateValue(date)) = tomlet.parse_value("1979-05-27")
+  assert tomlet.date_to_string(date) == "1979-05-27"
+
+  let assert Ok(tomlet.TimeValue(time)) = tomlet.parse_value("07:32:00")
+  assert tomlet.time_to_string(time) == "07:32:00"
+
+  let assert Ok(tomlet.DateTimeValue(datetime)) =
+    tomlet.parse_value("1979-05-27T07:32:00Z")
+  assert tomlet.datetime_to_string(datetime) == "1979-05-27T07:32:00Z"
+
+  assert tomlet.parse_value("[8000, 8001]")
+    == Ok(tomlet.ArrayValue([tomlet.IntValue(8000), tomlet.IntValue(8001)]))
+  assert tomlet.parse_value("{ name = \"tomato\", downloads = 42 }")
+    == Ok(
+      tomlet.InlineTableValue([
+        #(["name"], tomlet.StringValue("tomato")),
+        #(["downloads"], tomlet.IntValue(42)),
+      ]),
+    )
+}
+
+pub fn parse_value_rejects_trailing_syntax_test() {
+  let assert Error(tomlet.InvalidSyntax(_, _)) = tomlet.parse_value("42 43")
+  let assert Error(tomlet.InvalidSyntax(_, _)) =
+    tomlet.parse_value("[8000] trailing")
+}
+
 pub fn get_returns_public_array_of_tables_values_test() {
   let input =
     "[[packages]]\nname = \"tomato\"\n\n[[packages]]\nname = \"carrot\"\n"
