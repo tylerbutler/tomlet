@@ -1361,64 +1361,80 @@ fn parse_inline_entries(
   }
 }
 
-fn strip_inline_comment(text: String) -> String {
-  strip_inline_comment_loop(string.to_graphemes(text), False, False, "")
-}
-
+// Strips `#` comments from an inline-table or array body while preserving every
+// string literal verbatim. A single pass tracks single-line basic (`"`) and
+// literal (`'`) strings as well as multi-line basic (`"""`) and literal (`'''`)
+// strings, so comments that follow a closing multi-line delimiter on a later
+// physical line are removed correctly. Newlines are preserved so byte offsets in
+// downstream errors stay accurate.
 fn strip_inline_comments_by_line(text: String) -> String {
-  text
-  |> string.split("\n")
-  |> list.map(strip_inline_comment)
-  |> string.join(with: "\n")
+  strip_inline_comments_loop(string.to_graphemes(text), StripNormal, "")
 }
 
-fn strip_inline_comment_loop(
+type StripState {
+  StripNormal
+  StripBasic
+  StripLiteral
+  StripMultiBasic
+  StripMultiLiteral
+}
+
+fn strip_inline_comments_loop(
   chars: List(String),
-  in_basic: Bool,
-  in_literal: Bool,
+  state: StripState,
   acc: String,
 ) -> String {
+  case state, chars {
+    _, [] -> acc
+
+    StripNormal, ["\"", "\"", "\"", ..rest] ->
+      strip_inline_comments_loop(rest, StripMultiBasic, acc <> "\"\"\"")
+    StripNormal, ["'", "'", "'", ..rest] ->
+      strip_inline_comments_loop(rest, StripMultiLiteral, acc <> "'''")
+    StripNormal, ["\"", ..rest] ->
+      strip_inline_comments_loop(rest, StripBasic, acc <> "\"")
+    StripNormal, ["'", ..rest] ->
+      strip_inline_comments_loop(rest, StripLiteral, acc <> "'")
+    StripNormal, ["#", ..rest] ->
+      strip_inline_comments_loop(drop_to_newline(rest), StripNormal, acc)
+    StripNormal, [char, ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> char)
+
+    StripBasic, ["\\", escaped, ..rest] ->
+      strip_inline_comments_loop(rest, StripBasic, acc <> "\\" <> escaped)
+    StripBasic, ["\"", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "\"")
+    StripBasic, ["\n", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "\n")
+    StripBasic, [char, ..rest] ->
+      strip_inline_comments_loop(rest, StripBasic, acc <> char)
+
+    StripLiteral, ["'", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "'")
+    StripLiteral, ["\n", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "\n")
+    StripLiteral, [char, ..rest] ->
+      strip_inline_comments_loop(rest, StripLiteral, acc <> char)
+
+    StripMultiBasic, ["\\", escaped, ..rest] ->
+      strip_inline_comments_loop(rest, StripMultiBasic, acc <> "\\" <> escaped)
+    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "\"\"\"")
+    StripMultiBasic, [char, ..rest] ->
+      strip_inline_comments_loop(rest, StripMultiBasic, acc <> char)
+
+    StripMultiLiteral, ["'", "'", "'", ..rest] ->
+      strip_inline_comments_loop(rest, StripNormal, acc <> "'''")
+    StripMultiLiteral, [char, ..rest] ->
+      strip_inline_comments_loop(rest, StripMultiLiteral, acc <> char)
+  }
+}
+
+fn drop_to_newline(chars: List(String)) -> List(String) {
   case chars {
-    [] -> acc
-    ["\\", escaped, ..rest] ->
-      case in_basic {
-        True ->
-          strip_inline_comment_loop(
-            rest,
-            in_basic,
-            in_literal,
-            acc <> "\\" <> escaped,
-          )
-        False ->
-          strip_inline_comment_loop(
-            [escaped, ..rest],
-            in_basic,
-            in_literal,
-            acc <> "\\",
-          )
-      }
-    ["#", ..rest] ->
-      case in_basic || in_literal {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "#")
-        False -> acc
-      }
-    ["\"", ..rest] ->
-      case in_literal {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "\"")
-        False ->
-          strip_inline_comment_loop(rest, !in_basic, in_literal, acc <> "\"")
-      }
-    ["'", ..rest] ->
-      case in_basic {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "'")
-        False ->
-          strip_inline_comment_loop(rest, in_basic, !in_literal, acc <> "'")
-      }
-    [char, ..rest] ->
-      strip_inline_comment_loop(rest, in_basic, in_literal, acc <> char)
+    [] -> []
+    ["\n", ..] -> chars
+    [_, ..rest] -> drop_to_newline(rest)
   }
 }
 

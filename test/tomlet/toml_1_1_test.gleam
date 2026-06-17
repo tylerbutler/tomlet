@@ -88,6 +88,24 @@ pub fn multiline_inline_table_round_trips_test() -> Nil {
   Nil
 }
 
+// Comments may appear on the newlines inside a multi-line inline table, including
+// after the closing delimiter of a multi-line string value. The comment-stripping
+// pass must preserve string contents and round-trip the source byte-for-byte.
+pub fn multiline_inline_table_with_comments_round_trips_test() -> Nil {
+  let input =
+    "t = {#open\n  a = 1,#trailing\n  #standalone\n  s = \"\"\"\nhi\n\"\"\",#after\n}#close\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  assert tomlet.to_string(doc) == input
+  let assert Ok(1) = tomlet.get_int(doc, ["t", "a"])
+  let assert Ok(_) = tomlet.get_string(doc, ["t", "s"])
+  Nil
+}
+
+pub fn multiline_inline_table_with_comments_rejected_in_1_0_test() -> Nil {
+  let assert Error(_) = parser.parse("t = {#c\n  a = 1,\n}\n", parser.Toml10)
+  Nil
+}
+
 pub fn optional_seconds_round_trips_test() -> Nil {
   let input = "tm = 13:15\ndt = 2010-02-03T14:15\n"
   let assert Ok(doc) = tomlet.parse(input)
