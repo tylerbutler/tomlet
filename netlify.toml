@@ -1,0 +1,16 @@
+# Netlify build config for the tomlet landing page (lives in website/).
+# Netlify reads this from the repo root; `base` scopes the build to the subdir.
+
+[build]
+  base = "website"
+  command = "pnpm build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Long-cache the fingerprinted Astro assets.
+[[headers]]
+  for = "/_astro/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

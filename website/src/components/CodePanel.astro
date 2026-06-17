@@ -1,0 +1,70 @@
+---
+interface Props {
+  label?: string;
+  lang?: string;
+  tone?: "skillet" | "yolk";
+  class?: string;
+  code?: string;
+}
+const { label, lang = "toml", tone = "skillet", class: cls = "", code } = Astro.props;
+---
+
+<figure class={`panel panel--${tone} ${cls}`}>
+  {label && (
+    <figcaption class="panel__bar">
+      <span class="panel__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="panel__label">{label}</span>
+      <span class="panel__lang">{lang}</span>
+    </figcaption>
+  )}
+  {code
+    ? <pre class="panel__code"><code set:html={code} /></pre>
+    : <pre class="panel__code"><code><slot /></code></pre>}
+</figure>
+
+<style>
+  .panel {
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--skillet);
+    border: 1px solid var(--skillet-line);
+    box-shadow: 0 22px 50px -28px oklch(0.22 0.03 60 / 0.55);
+    text-align: left;
+  }
+  .panel__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 1rem;
+    background: var(--skillet-2);
+    border-bottom: 1px solid var(--skillet-line);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+  }
+  .panel__dots { display: inline-flex; gap: 0.4rem; }
+  .panel__dots i {
+    width: 0.6rem; height: 0.6rem; border-radius: 50%;
+    background: var(--skillet-line);
+  }
+  .panel__dots i:first-child { background: var(--paprika); }
+  .panel__dots i:nth-child(2) { background: var(--yolk); }
+  .panel__dots i:last-child { background: var(--chive); }
+  .panel__label { color: var(--on-skillet); font-weight: 500; letter-spacing: -0.01em; }
+  .panel__lang {
+    margin-left: auto;
+    color: var(--on-skillet-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.66rem;
+  }
+  .panel__code {
+    margin: 0;
+    padding: clamp(1rem, 0.8rem + 1vw, 1.5rem) clamp(1.1rem, 0.9rem + 1vw, 1.6rem);
+    overflow-x: auto;
+    color: var(--on-skillet);
+    font-size: clamp(0.82rem, 0.78rem + 0.25vw, 0.96rem);
+    line-height: 1.85;
+    -webkit-overflow-scrolling: touch;
+  }
+  .panel__code code { font-family: var(--font-mono); white-space: pre; }
+</style>
