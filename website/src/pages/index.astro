@@ -27,11 +27,10 @@ const beforeToml =
 <span class="t-key">draft</span> <span class="t-eq">=</span> <span class="t-bool">true</span>`;
 
 const editCode =
-`doc
-<span class="t-punct">|&gt;</span> <span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>([<span class="t-str">"version"</span>], <span class="t-num">1</span>)
-<span class="t-punct">|&gt;</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(_, [<span class="t-str">"draft"</span>]))
-<span class="t-punct">|&gt;</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
-  _, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>))`;
+`<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>(doc, [<span class="t-str">"version"</span>], <span class="t-num">1</span>)
+<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(doc, [<span class="t-str">"draft"</span>])
+<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
+  doc, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>)`;
 
 const afterToml =
 `<span class="t-com"># package metadata</span>
