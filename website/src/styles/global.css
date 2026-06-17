@@ -1,0 +1,173 @@
+/* tomlet — design tokens & base
+   Brand register · omelette theme · committed yolk-yellow + cast-iron ink */
+
+:root {
+  /* ---- color (OKLCH) ---- */
+  --yolk:        oklch(0.80 0.158 78);
+  --yolk-deep:   oklch(0.70 0.160 64);
+  --paprika:     oklch(0.62 0.190 40);
+  --paprika-ink: oklch(0.52 0.185 38);
+  --paprika-code:oklch(0.68 0.185 42);
+  --chive:       oklch(0.58 0.100 145);
+  --chive-chip:  oklch(0.68 0.105 145);
+
+  --ink:         oklch(0.22 0.012 60);
+  --ink-soft:    oklch(0.40 0.016 60);
+  --eggshell:    oklch(0.971 0.010 85);
+  --shell-deep:  oklch(0.940 0.014 85);
+  --shell-line:  oklch(0.885 0.016 85);
+  --skillet:     oklch(0.255 0.012 60);
+  --skillet-2:   oklch(0.320 0.012 60);
+  --skillet-line:oklch(0.380 0.012 60);
+
+  /* on-dark text */
+  --on-skillet:      oklch(0.93 0.012 85);
+  --on-skillet-soft: oklch(0.73 0.012 85);
+
+  /* ---- type ---- */
+  --font-display: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --step--1: clamp(0.84rem, 0.80rem + 0.20vw, 0.95rem);
+  --step-0:  clamp(1.00rem, 0.94rem + 0.30vw, 1.18rem);
+  --step-1:  clamp(1.25rem, 1.14rem + 0.55vw, 1.62rem);
+  --step-2:  clamp(1.56rem, 1.36rem + 1.00vw, 2.40rem);
+  --step-3:  clamp(1.95rem, 1.60rem + 1.75vw, 3.40rem);
+  --step-4:  clamp(2.44rem, 1.85rem + 2.95vw, 4.60rem);
+  --step-5:  clamp(2.90rem, 2.00rem + 4.50vw, 5.60rem);
+
+  /* ---- space ---- */
+  --space-2xs: clamp(0.5rem, 0.45rem + 0.25vw, 0.65rem);
+  --space-xs:  clamp(0.75rem, 0.68rem + 0.35vw, 1rem);
+  --space-s:   clamp(1rem, 0.9rem + 0.5vw, 1.35rem);
+  --space-m:   clamp(1.5rem, 1.3rem + 1vw, 2.2rem);
+  --space-l:   clamp(2.5rem, 2rem + 2.5vw, 4rem);
+  --space-xl:  clamp(4rem, 3rem + 5vw, 7rem);
+  --space-2xl: clamp(6rem, 4.5rem + 7vw, 10rem);
+
+  --content: 72rem;
+  --measure: 38rem;
+  --radius: 14px;
+  --radius-s: 9px;
+  --radius-pill: 999px;
+
+  --ring: 0 0 0 3px var(--eggshell), 0 0 0 6px var(--paprika);
+
+  /* ---- z-index scale ---- */
+  --z-nav: 100;
+  --z-overlay: 200;
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+
+body {
+  background: var(--eggshell);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  font-weight: 420;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-weight: 760;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+h2 { font-size: var(--step-3); letter-spacing: -0.032em; }
+h3 { font-size: var(--step-1); letter-spacing: -0.02em; line-height: 1.12; }
+
+p { text-wrap: pretty; }
+
+a { color: var(--paprika-ink); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+a:hover { color: var(--paprika); }
+
+::selection { background: var(--yolk); color: var(--ink); }
+
+img, svg { display: block; max-width: 100%; }
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: var(--radius-s);
+}
+
+/* ---- layout helpers ---- */
+.wrap { width: min(100% - 2.5rem, var(--content)); margin-inline: auto; }
+.section { padding-block: var(--space-2xl); }
+.flow > * + * { margin-block-start: var(--space-s); }
+
+.eyebrow-mono {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--paprika-ink);
+}
+
+/* ---- buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.55em;
+  font-family: var(--font-display);
+  font-weight: 640;
+  font-size: var(--step-0);
+  line-height: 1;
+  padding: 0.85em 1.35em;
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.18s var(--ease-out-quart),
+              background-color 0.18s var(--ease-out-quart),
+              box-shadow 0.18s var(--ease-out-quart),
+              border-color 0.18s var(--ease-out-quart);
+}
+.btn:hover { transform: translateY(-2px); }
+.btn:active { transform: translateY(0); }
+.btn--primary {
+  background: var(--ink);
+  color: var(--eggshell);
+  box-shadow: 0 6px 0 -1px var(--yolk-deep);
+}
+.btn--primary:hover { background: #000; box-shadow: 0 9px 0 -1px var(--yolk-deep); color: var(--eggshell); }
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.btn--ghost:hover { background: var(--ink); color: var(--eggshell); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:hover, .btn:active { transform: none; }
+  .btn, .btn:hover { transition: none; }
+}
+
+/* ---- code ---- */
+code, pre, .mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+
+/* ---- code panel syntax tokens (on skillet) ---- */
+.t-com   { color: var(--on-skillet); font-style: normal; }
+.t-com-hi{ color: var(--on-skillet); }
+.t-key   { color: var(--paprika-code); }
+.t-table { color: var(--paprika-code); font-weight: 600; }
+.t-str   { color: var(--yolk); }
+.t-num   { color: oklch(0.78 0.10 150); }
+.t-bool  { color: oklch(0.78 0.10 150); }
+.t-fn    { color: var(--yolk); }
+.t-kw    { color: var(--paprika-code); }
+.t-mod   { color: var(--on-skillet); }
+.t-punct { color: var(--on-skillet-soft); }
+.t-eq    { color: var(--on-skillet-soft); }
