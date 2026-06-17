@@ -99,6 +99,7 @@ pub fn get_array_of_tables_test() {
   let assert Ok(table) =
     parser.parse(
       "[[products]]\nname = \"Hammer\"\n[[products]]\nname = \"Nail\"\n",
+      parser.Toml11,
     )
 
   let assert Ok(ast.ArrayOfTables(items)) = path.get(table, ["products"])
