@@ -988,8 +988,7 @@ fn split_top_level_commas(text: String) -> List(#(String, Int)) {
   split_top_level_commas_loop(
     string.to_graphemes(text),
     0,
-    False,
-    False,
+    StripNormal,
     "",
     0,
     [],
@@ -999,131 +998,208 @@ fn split_top_level_commas(text: String) -> List(#(String, Int)) {
 fn split_top_level_commas_loop(
   chars: List(String),
   depth: Int,
-  in_basic: Bool,
-  in_literal: Bool,
+  state: StripState,
   current: String,
   current_start: Int,
   parts: List(#(String, Int)),
 ) -> List(#(String, Int)) {
-  case chars {
-    [] ->
+  case state, chars {
+    _, [] ->
       list.reverse([
         #(string.trim(current), current_start + trim_start_byte_offset(current)),
         ..parts
       ])
-    [char, ..rest] ->
-      case char, depth, in_basic, in_literal {
-        "\\", _, True, False -> {
-          case rest {
-            [] ->
-              split_top_level_commas_loop(
-                rest,
-                depth,
-                in_basic,
-                in_literal,
-                current <> char,
-                current_start,
-                parts,
-              )
-            [escaped, ..after_escape] ->
-              split_top_level_commas_loop(
-                after_escape,
-                depth,
-                in_basic,
-                in_literal,
-                current <> "\\" <> escaped,
-                current_start,
-                parts,
-              )
-          }
-        }
-        ",", 0, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-            "",
-            current_start + string.byte_size(current) + 1,
-            [
-              #(
-                string.trim(current),
-                current_start + trim_start_byte_offset(current),
-              ),
-              ..parts
-            ],
-          )
-        "\"", _, _, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            !in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "'", _, False, _ ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            !in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "[", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth + 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "{", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth + 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "]", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth - 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "}", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth - 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        _, _, _, _ ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-      }
+
+    StripNormal, ["\"", "\"", "\"", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripMultiBasic,
+        current <> "\"\"\"",
+        current_start,
+        parts,
+      )
+    StripNormal, ["'", "'", "'", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripMultiLiteral,
+        current <> "'''",
+        current_start,
+        parts,
+      )
+    StripNormal, ["\"", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripBasic,
+        current <> "\"",
+        current_start,
+        parts,
+      )
+    StripNormal, ["'", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripLiteral,
+        current <> "'",
+        current_start,
+        parts,
+      )
+    StripNormal, [",", ..rest] if depth == 0 ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        "",
+        current_start + string.byte_size(current) + 1,
+        [
+          #(
+            string.trim(current),
+            current_start + trim_start_byte_offset(current),
+          ),
+          ..parts
+        ],
+      )
+    StripNormal, ["[", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth + 1,
+        StripNormal,
+        current <> "[",
+        current_start,
+        parts,
+      )
+    StripNormal, ["{", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth + 1,
+        StripNormal,
+        current <> "{",
+        current_start,
+        parts,
+      )
+    StripNormal, ["]", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth - 1,
+        StripNormal,
+        current <> "]",
+        current_start,
+        parts,
+      )
+    StripNormal, ["}", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth - 1,
+        StripNormal,
+        current <> "}",
+        current_start,
+        parts,
+      )
+    StripNormal, [char, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> char,
+        current_start,
+        parts,
+      )
+
+    StripBasic, ["\\", escaped, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripBasic,
+        current <> "\\" <> escaped,
+        current_start,
+        parts,
+      )
+    StripBasic, ["\"", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> "\"",
+        current_start,
+        parts,
+      )
+    StripBasic, [char, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripBasic,
+        current <> char,
+        current_start,
+        parts,
+      )
+
+    StripLiteral, ["'", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> "'",
+        current_start,
+        parts,
+      )
+    StripLiteral, [char, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripLiteral,
+        current <> char,
+        current_start,
+        parts,
+      )
+
+    StripMultiBasic, ["\\", escaped, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripMultiBasic,
+        current <> "\\" <> escaped,
+        current_start,
+        parts,
+      )
+    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> "\"\"\"",
+        current_start,
+        parts,
+      )
+    StripMultiBasic, [char, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripMultiBasic,
+        current <> char,
+        current_start,
+        parts,
+      )
+
+    StripMultiLiteral, ["'", "'", "'", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> "'''",
+        current_start,
+        parts,
+      )
+    StripMultiLiteral, [char, ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripMultiLiteral,
+        current <> char,
+        current_start,
+        parts,
+      )
   }
 }
 
@@ -1239,8 +1315,7 @@ fn inline_table_newlines_are_valid(text: String, version: Version) -> Bool {
       inline_table_newlines_are_valid_loop(
         string.to_graphemes(text),
         0,
-        False,
-        False,
+        StripNormal,
       )
   }
 }
@@ -1248,58 +1323,58 @@ fn inline_table_newlines_are_valid(text: String, version: Version) -> Bool {
 fn inline_table_newlines_are_valid_loop(
   chars: List(String),
   depth: Int,
-  in_basic: Bool,
-  in_literal: Bool,
+  state: StripState,
 ) -> Bool {
-  case chars {
-    [] -> True
-    ["\\", _, ..rest] if in_basic ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, in_literal)
-    ["\n", ..rest] ->
-      case depth > 0 || in_basic || in_literal {
-        True ->
-          inline_table_newlines_are_valid_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-          )
+  case state, chars {
+    _, [] -> True
+
+    StripNormal, ["\"", "\"", "\"", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
+    StripNormal, ["'", "'", "'", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripMultiLiteral)
+    StripNormal, ["\"", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
+    StripNormal, ["'", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripLiteral)
+    StripNormal, ["\n", ..rest] ->
+      case depth > 0 {
+        True -> inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
         False -> False
       }
-    ["\"", ..rest] if !in_literal ->
-      inline_table_newlines_are_valid_loop(rest, depth, !in_basic, in_literal)
-    ["'", ..rest] if !in_basic ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, !in_literal)
-    ["[", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth + 1,
-        in_basic,
-        in_literal,
-      )
-    ["{", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth + 1,
-        in_basic,
-        in_literal,
-      )
-    ["]", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth - 1,
-        in_basic,
-        in_literal,
-      )
-    ["}", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth - 1,
-        in_basic,
-        in_literal,
-      )
-    [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, in_literal)
+    StripNormal, ["[", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth + 1, StripNormal)
+    StripNormal, ["{", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth + 1, StripNormal)
+    StripNormal, ["]", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
+    StripNormal, ["}", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
+    StripNormal, [_, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
+
+    StripBasic, ["\\", _, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
+    StripBasic, ["\"", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
+    StripBasic, [_, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
+
+    StripLiteral, ["'", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
+    StripLiteral, [_, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripLiteral)
+
+    StripMultiBasic, ["\\", _, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
+    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
+    StripMultiBasic, [_, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
+
+    StripMultiLiteral, ["'", "'", "'", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
+    StripMultiLiteral, [_, ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth, StripMultiLiteral)
   }
 }
 

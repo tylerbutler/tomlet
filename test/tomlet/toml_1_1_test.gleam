@@ -106,6 +106,28 @@ pub fn multiline_inline_table_with_comments_rejected_in_1_0_test() -> Nil {
   Nil
 }
 
+// A multi-line string with an odd number of internal quotes must not desync the
+// comma splitter: the comma inside the string is not a separator, and a real
+// separator after such a string is still found. Valid in both 1.0 and 1.1.
+pub fn multiline_string_with_internal_quote_in_array_round_trips_test() -> Nil {
+  let input = "arr = [\"\"\"a\"b,c\"\"\", \"x\"]\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  assert tomlet.to_string(doc) == input
+  let strict = tomlet.with_version(tomlet.default_options(), tomlet.Toml10)
+  let assert Ok(_) = tomlet.parse_with(input, strict)
+  Nil
+}
+
+// A multi-line string value inside a TOML 1.0 inline table may contain real
+// newlines and internal quotes without being rejected as an inline-table newline.
+pub fn inline_table_multiline_string_value_accepted_in_1_0_test() -> Nil {
+  let input = "t = { a = \"\"\"ab\"cd\nef\"\"\" }\n"
+  let strict = tomlet.with_version(tomlet.default_options(), tomlet.Toml10)
+  let assert Ok(doc) = tomlet.parse_with(input, strict)
+  assert tomlet.to_string(doc) == input
+  Nil
+}
+
 pub fn optional_seconds_round_trips_test() -> Nil {
   let input = "tm = 13:15\ndt = 2010-02-03T14:15\n"
   let assert Ok(doc) = tomlet.parse(input)
