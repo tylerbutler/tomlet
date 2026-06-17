@@ -62,14 +62,7 @@ const c = {
   onSkilletSoft: "#b8ad9b",
 };
 
-const logo = `
-<svg width="116" height="116" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <path d="M5.5 31.5C5.5 17.8 16.4 8.5 24 8.5C31.6 8.5 42.5 17.8 42.5 31.5C42.5 34 40.4 35.6 37.2 35.6H10.8C7.6 35.6 5.5 34 5.5 31.5Z" fill="${c.yolk}" stroke="${c.ink}" stroke-width="2.4" stroke-linejoin="round"/>
-  <path d="M11 27.5C16 23.5 20 25.5 24 25.5C28 25.5 32 23.5 37 27.5" stroke="${c.yolkDeep}" stroke-width="2.2" stroke-linecap="round"/>
-  <circle cx="24" cy="19.5" r="4.1" fill="${c.paprika}" stroke="${c.ink}" stroke-width="2"/>
-  <rect x="14.5" y="30.4" width="3.4" height="1.7" rx="0.85" fill="${c.chive}" transform="rotate(-18 14.5 30.4)"/>
-  <rect x="29.5" y="31" width="3.4" height="1.7" rx="0.85" fill="${c.chive}" transform="rotate(22 29.5 31)"/>
-</svg>`;
+const logo = `<img class="logo" alt="tomlet" src="data:image/png;base64,${b64(join(root, "public", "tomlet-logo.png"))}" />`;
 
 const html = `<!doctype html>
 <html lang="en">
@@ -120,6 +113,12 @@ body {
 /* ---- left: brand + headline + install ---- */
 .left { display: flex; flex-direction: column; gap: 26px; }
 .brand { display: flex; align-items: center; gap: 20px; }
+.brand .logo {
+  height: 104px;
+  width: auto;
+  display: block;
+  flex: none;
+}
 .brand .word {
   font-weight: 800;
   font-size: 76px;
