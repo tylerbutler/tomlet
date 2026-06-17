@@ -54,7 +54,10 @@ const typedAccess =
   <header class="nav">
     <div class="wrap nav__inner">
       <a class="nav__brand" href="#top" aria-label="tomlet — home">
-        <Logo size={30} />
+        <picture class="nav__logo">
+          <source srcset="/tomlet-logo.webp" type="image/webp" />
+          <img src="/tomlet-logo.png" width="720" height="385" alt="" decoding="async" />
+        </picture>
         <span class="nav__word">tomlet</span>
       </a>
       <nav class="nav__links" aria-label="Primary">
@@ -274,7 +277,10 @@ const typedAccess =
     <div class="wrap foot__inner">
       <div class="foot__brand">
         <a class="foot__mark" href="#top" aria-label="tomlet — back to top">
-          <Logo size={40} />
+          <picture class="foot__logo">
+            <source srcset="/tomlet-logo.webp" type="image/webp" />
+            <img src="/tomlet-logo.png" width="720" height="385" alt="" decoding="async" />
+          </picture>
           <span>tomlet</span>
         </a>
         <p class="foot__tag">Round-tripping TOML for Gleam. Made with butter.</p>
@@ -322,6 +328,8 @@ const typedAccess =
   }
   .nav__inner { display: flex; align-items: center; justify-content: space-between; height: 4.1rem; }
   .nav__brand { display: inline-flex; align-items: center; gap: 0.55rem; text-decoration: none; color: var(--ink); }
+  .nav__logo { display: flex; flex: none; }
+  .nav__logo img { height: 1.9rem; width: auto; display: block; }
   .nav__word { font-weight: 760; font-size: 1.3rem; letter-spacing: -0.04em; }
   .nav__links { display: flex; align-items: center; gap: clamp(0.9rem, 2vw, 1.7rem); }
   .nav__links a { color: var(--ink); text-decoration: none; font-weight: 520; font-size: 0.98rem; }
@@ -553,6 +561,8 @@ const typedAccess =
   }
   @media (min-width: 820px) { .foot__inner { grid-template-columns: 1.1fr 1.4fr; } }
   .foot__mark { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--on-skillet); text-decoration: none; font-weight: 760; font-size: 1.4rem; letter-spacing: -0.04em; }
+  .foot__logo { display: flex; flex: none; }
+  .foot__logo img { height: 2.5rem; width: auto; display: block; }
   .foot__tag { margin-top: 0.9rem; color: var(--on-skillet-soft); max-width: 30ch; }
   .foot__cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem; }
   .foot__col { display: flex; flex-direction: column; gap: 0.55rem; align-items: flex-start; }
