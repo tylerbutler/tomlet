@@ -67,4 +67,11 @@ const { label, lang = "toml", tone = "skillet", class: cls = "", code } = Astro.
     -webkit-overflow-scrolling: touch;
   }
   .panel__code code { font-family: var(--font-mono); white-space: pre; }
+  @media (max-width: 560px) {
+    .panel__code {
+      line-height: 1.6;
+      padding: clamp(0.85rem, 0.7rem + 1vw, 1.1rem) clamp(0.95rem, 0.8rem + 1vw, 1.2rem);
+    }
+    .panel__bar { padding: 0.55rem 0.85rem; }
+  }
 </style>

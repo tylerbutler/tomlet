@@ -94,7 +94,7 @@ h3 { font-size: var(--step-1); letter-spacing: -0.02em; line-height: 1.12; }
 p { text-wrap: pretty; }
 
 a { color: var(--paprika-ink); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
-a:hover { color: var(--paprika); }
+a:hover { color: var(--paprika-ink); }
 
 ::selection { background: var(--yolk); color: var(--ink); }
 
@@ -111,11 +111,21 @@ img, svg { display: block; max-width: 100%; }
 .section { padding-block: var(--space-2xl); }
 .flow > * + * { margin-block-start: var(--space-s); }
 
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .eyebrow-mono {
   font-family: var(--font-mono);
   font-size: var(--step--1);
   font-weight: 500;
-  color: var(--paprika-ink);
+  color: var(--ink-soft);
 }
 
 /* ---- buttons ---- */

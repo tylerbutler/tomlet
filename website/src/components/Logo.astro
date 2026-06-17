@@ -3,8 +3,18 @@ interface Props {
   size?: number;
   class?: string;
   title?: string;
+  decorative?: boolean;
 }
-const { size = 36, class: cls = "", title = "tomlet" } = Astro.props;
+const {
+  size = 36,
+  class: cls = "",
+  title = "tomlet",
+  decorative = false,
+} = Astro.props;
+
+const a11y = decorative
+  ? { "aria-hidden": "true" }
+  : { role: "img", "aria-label": title };
 ---
 
 <svg
@@ -12,8 +22,7 @@ const { size = 36, class: cls = "", title = "tomlet" } = Astro.props;
   width={size}
   height={size}
   viewBox="0 0 48 48"
-  role="img"
-  aria-label={title}
+  {...a11y}
   fill="none"
   xmlns="http://www.w3.org/2000/svg"
 >
