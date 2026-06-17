@@ -309,7 +309,6 @@ pub fn invalid_corpus_gap_rejections_test() {
 
 pub fn invalid_inline_table_corpus_rejections_test() {
   let invalid_inputs = [
-    "simple = { a = 1 \n}\n",
     "a={b=1, b=2}\n",
     "a={a.b=1, a=2}\n",
     "a.b=0\na={}\n",
@@ -320,6 +319,11 @@ pub fn invalid_inline_table_corpus_rejections_test() {
   list.each(invalid_inputs, fn(input) {
     let assert Error(_) = tomlet.parse(input)
   })
+
+  // Newlines inside an inline table are invalid under TOML 1.0 (the default the
+  // public parser previously enforced) but valid under TOML 1.1.
+  let assert Error(_) = parser.parse("simple = { a = 1 \n}\n", parser.Toml10)
+  Nil
 }
 
 pub fn invalid_control_character_corpus_rejections_test() {
