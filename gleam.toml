@@ -5,7 +5,7 @@ description = "A round-tripping TOML parser and writer for Gleam, preserving com
 licences = ["Apache-2.0", "MIT"]
 repository = { type = "github", user = "tylerbutler", repo = "tomlet" }
 links = [{ title = "TOML spec", href = "https://toml.io/en/v1.0.0" }]
-internal_modules = ["tomlet/ast", "tomlet/key", "tomlet/parser", "tomlet/path"]
+internal_modules = ["tomlet/ast", "tomlet/key", "tomlet/lexer", "tomlet/parser", "tomlet/path"]
 #
 # For a full reference of all the available options, you can have a look at
 # https://gleam.run/writing-gleam/gleam-toml/.
