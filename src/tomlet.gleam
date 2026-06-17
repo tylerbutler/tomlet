@@ -292,14 +292,46 @@ pub fn new() -> Document {
   )
 }
 
-/// Parse TOML 1.0 text into a document.
+/// The TOML language version to parse against.
+pub type TomlVersion {
+  Toml10
+  Toml11
+}
+
+/// Parsing options. Construct with `default_options` and refine with builders
+/// such as `with_version`.
+pub opaque type Options {
+  Options(version: TomlVersion)
+}
+
+/// Default options: parse TOML 1.1.
+pub fn default_options() -> Options {
+  Options(version: Toml11)
+}
+
+/// Set the TOML version to parse against.
+pub fn with_version(_options: Options, version: TomlVersion) -> Options {
+  Options(version: version)
+}
+
+/// Parse TOML 1.1 text into a document. Use `parse_with` with
+/// `with_version(default_options(), Toml10)` for strict TOML 1.0 parsing that
+/// rejects 1.1-only syntax.
 ///
 /// Successful parses return an opaque `Document` that preserves comments,
 /// formatting trivia, key order, and the original line ending style for
 /// round-tripping. Invalid text returns `ParseError`, including byte offsets for
 /// syntax and duplicate-key diagnostics.
 pub fn parse(input: String) -> Result(Document, ParseError) {
-  parse_string(input)
+  parse_string_with(input, Toml11)
+}
+
+/// Parse TOML text using the given options.
+pub fn parse_with(
+  input: String,
+  options: Options,
+) -> Result(Document, ParseError) {
+  parse_string_with(input, options.version)
 }
 
 /// Parse a standalone TOML value literal.
@@ -318,7 +350,7 @@ pub fn parse_value(input: String) -> Result(Value, ParseError) {
   let key = "__tomlet_value__"
   let prefix = key <> " = "
   let source = prefix <> input <> "\n"
-  case parse_string(source) {
+  case parse_string_with(source, Toml11) {
     Ok(doc) ->
       case get(doc, [key]) {
         Ok(value) -> Ok(value)
@@ -358,6 +390,21 @@ fn value_offset(offset: Int, prefix_size: Int) -> Int {
 /// // -> Error(tomlet.InvalidEncoding)
 /// ```
 pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
+  parse_bytes_versioned(input, Toml11)
+}
+
+/// Parse TOML bytes using the given options.
+pub fn parse_bytes_with(
+  input: BitArray,
+  options: Options,
+) -> Result(Document, ParseError) {
+  parse_bytes_versioned(input, options.version)
+}
+
+fn parse_bytes_versioned(
+  input: BitArray,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
   // Strip a single leading UTF-8 BOM (0xEF 0xBB 0xBF). Pattern matching on the
   // bytes avoids slice/length arithmetic and a fallback that could otherwise
   // misreport a leading BOM as an embedded one.
@@ -370,7 +417,7 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
     True -> Error(InvalidEncoding)
     False ->
       case bit_array.to_string(input_without_initial_bom) {
-        Ok(decoded) -> parse_string(decoded)
+        Ok(decoded) -> parse_string_with(decoded, version)
         Error(_) -> Error(InvalidEncoding)
       }
   }
@@ -480,7 +527,10 @@ fn bit_array_contains_utf8_bom(input: BitArray) -> Bool {
   }
 }
 
-fn parse_string(input: String) -> Result(Document, ParseError) {
+fn parse_string_with(
+  input: String,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
   let line_ending = case string.contains(input, "\r\n") {
     True -> Crlf
     False -> Lf
@@ -493,7 +543,7 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
       // Parsed AST source_text is LF-only; CRLF is tracked separately on Document.
       let normalized = string.replace(input_without_initial_bom, "\r\n", "\n")
 
-      case parser.parse(normalized, parser.Toml11) {
+      case parser.parse(normalized, to_parser_version(version)) {
         Ok(root) ->
           Ok(Document(
             root: root,
@@ -510,6 +560,13 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
           Error(DuplicateKey(key, normalized_offset_to_original(input, offset)))
       }
     }
+  }
+}
+
+fn to_parser_version(version: TomlVersion) -> parser.Version {
+  case version {
+    Toml10 -> parser.Toml10
+    Toml11 -> parser.Toml11
   }
 }
 
