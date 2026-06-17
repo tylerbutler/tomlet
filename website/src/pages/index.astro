@@ -143,8 +143,9 @@ const typedAccess =
           <p class="eyebrow-mono">// the whole point</p>
           <h2>Edit a value.<br />Leave the file alone.</h2>
           <p class="how__sub measure">
-            Every other TOML library in the BEAM world reformats your file the
-            moment you write to it. tomlet treats the surrounding text as sacred:
+            In the BEAM world, most TOML libraries only read &mdash; and the rare
+            one that can write hands you a freshly reformatted file with the
+            comments gone. tomlet treats the surrounding text as sacred:
             it changes the bytes you asked for and nothing else.
           </p>
         </div>
@@ -260,10 +261,12 @@ const typedAccess =
         </div>
         <div class="why__body flow measure">
           <p>
-            No existing Erlang, Elixir or Gleam TOML library round-trips comments,
-            and only one of them can write TOML at all. If you wanted to bump a
-            version in <code>gleam.toml</code> or rewrite a <code>pyproject.toml</code>
-            as a build step without nuking the author's notes, you were out of luck.
+            No existing Erlang, Elixir or Gleam TOML library round-trips comments
+            &mdash; they parse into plain maps and throw the comments away. Most can
+            only read; the few that can write give you back a reformatted file. If
+            you wanted to bump a version in <code>gleam.toml</code> or rewrite a
+            <code>pyproject.toml</code> as a build step without nuking the author's
+            notes, you were out of luck.
           </p>
           <p>
             tomlet fills that gap. It's a fresh library with an AST built from the
