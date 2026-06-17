@@ -129,8 +129,6 @@ pub fn parity_invalid_inputs_test() {
     "[a]\nb = 1\n\n[a]\nc = 2\n",
     "[tbl]\n[[tbl]]\n",
     "bad = [1,,2]\n",
-    "bad = {a = 1,}\n",
-    "bad = { a = 1 \n}\n",
     "a={b=1, b=2}\n",
     "leading-zero = 01\n",
     "capitalized = True\n",
@@ -140,6 +138,17 @@ pub fn parity_invalid_inputs_test() {
   ]
   |> list.each(fn(input) {
     let assert Error(_) = parser.parse(input, parser.Toml11)
+    Nil
+  })
+
+  // Inline-table trailing commas and newlines are invalid under TOML 1.0 but
+  // become valid under TOML 1.1, so they are pinned to the 1.0 parser here.
+  [
+    "bad = {a = 1,}\n",
+    "bad = { a = 1 \n}\n",
+  ]
+  |> list.each(fn(input) {
+    let assert Error(_) = parser.parse(input, parser.Toml10)
     Nil
   })
 }
