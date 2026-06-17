@@ -72,6 +72,17 @@ const typedAccess =
       <div class="hero__bg" aria-hidden="true"></div>
       <div class="wrap hero__inner">
         <div class="hero__copy reveal">
+          <picture class="hero__mark">
+            <source srcset="/tomlet-logo.webp" type="image/webp" />
+            <img
+              src="/tomlet-logo.png"
+              width="720"
+              height="385"
+              alt="The tomlet logomark: a folded golden omelette dotted with diced paprika"
+              decoding="async"
+              fetchpriority="high"
+            />
+          </picture>
           <p class="hero__kicker"><span>TOML&nbsp;+&nbsp;omelette</span> · a tidy little parser for Gleam</p>
           <h1 class="hero__title">TOML that<br />keeps your<br /><span class="hero__under">comments.</span></h1>
           <p class="hero__lede">
@@ -322,6 +333,23 @@ const typedAccess =
 
   /* ---------- HERO ---------- */
   .hero { position: relative; padding-block: clamp(2.5rem, 1rem + 7vw, 6rem) clamp(3rem, 1rem + 8vw, 7rem); overflow: hidden; }
+  .hero__mark {
+    display: block;
+    width: clamp(112px, 6vw + 84px, 168px);
+    margin-bottom: clamp(1.1rem, 2vw, 1.6rem);
+    filter: drop-shadow(0 14px 16px oklch(0.55 0.12 70 / 0.28));
+  }
+  .hero__mark img {
+    display: block; width: 100%; height: auto;
+    transform-origin: 50% 100%;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .hero__mark img { animation: plate 0.9s var(--ease-out-expo) 0.08s both; }
+    @keyframes plate {
+      from { opacity: 0; transform: translateY(10px) scale(0.92) rotate(-2deg); }
+      to   { opacity: 1; transform: none; }
+    }
+  }
   .hero__bg {
     position: absolute; inset: 0; z-index: -1;
     background:

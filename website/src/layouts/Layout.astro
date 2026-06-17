@@ -11,6 +11,9 @@ const {
   title = "tomlet — round-tripping TOML for Gleam",
   description = "A TOML parser and writer for Gleam that keeps your comments. Edit a value, write it back, and every comment, key order, and bit of formatting stays exactly where you left it.",
 } = Astro.props;
+
+const ogImage = new URL("/tomlet-logo.png", Astro.site).href;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
 ---
 
 <!doctype html>
@@ -19,12 +22,20 @@ const {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/tomlet-logo.png" />
+    <link rel="canonical" href={canonical} />
     <title>{title}</title>
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="720" />
+    <meta property="og:image:height" content="385" />
+    <meta property="og:image:alt" content="The tomlet logomark: a folded golden omelette dotted with diced paprika" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#f6c83b" />
   </head>
   <body>
