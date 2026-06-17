@@ -1,0 +1,7 @@
+kind: Added
+body: |-
+  Parse TOML 1.1 by default, including newlines and trailing commas in inline
+  tables, `\xHH` and `\e` string escapes, and optional seconds in times and
+  date-times. Use `tomlet.parse_with`/`tomlet.parse_bytes_with` with
+  `with_version(default_options(), Toml10)` for strict TOML 1.0 parsing.
+time: 2026-06-17T12:00:00.000000000-07:00
