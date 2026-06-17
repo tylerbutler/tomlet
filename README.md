@@ -75,6 +75,28 @@ Parse errors use stable variants for machine handling. `InvalidSyntax` and
 `DuplicateKey` carry byte offsets; use `tomlet.line_column(input, offset)` when
 displaying diagnostics to users.
 
+## TOML version
+
+`tomlet.parse` and `tomlet.parse_bytes` accept TOML 1.1 by default. The 1.1
+features tomlet supports beyond 1.0 are:
+
+- newlines and trailing commas inside inline tables,
+- `\xHH` hex and `\e` escape sequences in basic strings and keys,
+- optional seconds in local and offset times and date-times (for example
+  `07:32` and `1979-05-27T07:32Z`).
+
+To parse strictly against TOML 1.0 and reject this 1.1-only syntax, pass
+options built with `with_version`:
+
+```gleam
+let options = tomlet.with_version(tomlet.default_options(), tomlet.Toml10)
+let assert Error(_) = tomlet.parse_with("t = 07:32\n", options)
+```
+
+`parse_with` and `parse_bytes_with` take an opaque `Options` value. Construct it
+with `default_options` (TOML 1.1) and refine it with builders such as
+`with_version`.
+
 ## Checked edits
 
 Edit operations return `Result(Document, EditError)` so applications can tell
