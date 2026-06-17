@@ -27,10 +27,11 @@ const beforeToml =
 <span class="t-key">draft</span> <span class="t-eq">=</span> <span class="t-bool">true</span>`;
 
 const editCode =
-`<span class="t-kw">let</span> doc <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>(doc, [<span class="t-str">"version"</span>], <span class="t-num">1</span>)
-<span class="t-kw">let</span> doc <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(doc, [<span class="t-str">"draft"</span>])
-<span class="t-kw">let</span> doc <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
-        doc, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>)`;
+`doc
+<span class="t-punct">|&gt;</span> <span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>([<span class="t-str">"version"</span>], <span class="t-num">1</span>)
+<span class="t-punct">|&gt;</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(_, [<span class="t-str">"draft"</span>]))
+<span class="t-punct">|&gt;</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
+  _, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>))`;
 
 const afterToml =
 `<span class="t-com"># package metadata</span>
@@ -45,7 +46,7 @@ const typedAccess =
 <span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(version) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_int</span>(doc, [<span class="t-str">"version"</span>])
 <span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(enabled) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_bool</span>(doc, [<span class="t-str">"enabled"</span>])
 
-<span class="t-com"># nested keys use the same path syntax</span>
+<span class="t-com">// nested keys use the same path syntax</span>
 <span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(name) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"pkg"</span>, <span class="t-str">"name"</span>])`;
 ---
 
