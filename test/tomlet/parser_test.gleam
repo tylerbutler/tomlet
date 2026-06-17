@@ -10,7 +10,7 @@ pub fn main() -> Nil {
 }
 
 fn parse_value(input: String, key: List(String)) {
-  let assert Ok(table) = parser.parse(input)
+  let assert Ok(table) = parser.parse(input, parser.Toml11)
   path.get(table, key)
 }
 
@@ -221,7 +221,7 @@ pub fn invalid_bare_value_returns_positioned_error_test() {
 }
 
 pub fn parser_module_uses_typed_expected_token_kind_test() {
-  assert parser.parse("name = ???\n")
+  assert parser.parse("name = ???\n", parser.Toml11)
     == Error(parser.Unexpected("???", parser.ExpectedValue, 7))
 }
 
