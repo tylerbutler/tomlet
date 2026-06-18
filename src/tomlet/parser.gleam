@@ -2118,21 +2118,24 @@ pub fn date_repr_is_valid(text: String) -> Bool {
   date_parts_are_valid(text)
 }
 
-pub fn datetime_repr_is_valid(text: String) -> Bool {
+// Split a datetime into its date and time-offset halves on any of the three
+// permitted separators (`T`, `t`, or a space).
+fn split_datetime(text: String) -> Result(#(String, String), Nil) {
   case string.split_once(text, "T") {
-    Ok(#(date, time_offset)) ->
-      date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
+    Ok(parts) -> Ok(parts)
     Error(Nil) ->
       case string.split_once(text, "t") {
-        Ok(#(date, time_offset)) ->
-          date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
-        Error(Nil) ->
-          case string.split_once(text, " ") {
-            Ok(#(date, time_offset)) ->
-              date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
-            Error(Nil) -> False
-          }
+        Ok(parts) -> Ok(parts)
+        Error(Nil) -> string.split_once(text, " ")
       }
+  }
+}
+
+pub fn datetime_repr_is_valid(text: String) -> Bool {
+  case split_datetime(text) {
+    Ok(#(date, time_offset)) ->
+      date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
+    Error(Nil) -> False
   }
 }
 
@@ -2154,23 +2157,11 @@ fn datetime_repr_is_valid_versioned(text: String, version: Version) -> Bool {
   case version {
     Toml10 -> datetime_repr_is_valid(text)
     Toml11 ->
-      case string.split_once(text, "T") {
+      case split_datetime(text) {
         Ok(#(date, time_offset)) ->
           date_repr_is_valid(date)
           && time_offset_repr_is_valid_versioned(time_offset, version)
-        Error(Nil) ->
-          case string.split_once(text, "t") {
-            Ok(#(date, time_offset)) ->
-              date_repr_is_valid(date)
-              && time_offset_repr_is_valid_versioned(time_offset, version)
-            Error(Nil) ->
-              case string.split_once(text, " ") {
-                Ok(#(date, time_offset)) ->
-                  date_repr_is_valid(date)
-                  && time_offset_repr_is_valid_versioned(time_offset, version)
-                Error(Nil) -> False
-              }
-          }
+        Error(Nil) -> False
       }
   }
 }
