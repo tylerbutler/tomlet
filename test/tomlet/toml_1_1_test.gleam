@@ -113,8 +113,7 @@ pub fn multiline_string_with_internal_quote_in_array_round_trips_test() -> Nil {
   let input = "arr = [\"\"\"a\"b,c\"\"\", \"x\"]\n"
   let assert Ok(doc) = tomlet.parse(input)
   assert tomlet.to_string(doc) == input
-  let strict = tomlet.with_version(tomlet.default_options(), tomlet.Toml10)
-  let assert Ok(_) = tomlet.parse_with(input, strict)
+  let assert Ok(_) = tomlet.parse_with(input, tomlet.Toml10)
   Nil
 }
 
@@ -122,8 +121,7 @@ pub fn multiline_string_with_internal_quote_in_array_round_trips_test() -> Nil {
 // newlines and internal quotes without being rejected as an inline-table newline.
 pub fn inline_table_multiline_string_value_accepted_in_1_0_test() -> Nil {
   let input = "t = { a = \"\"\"ab\"cd\nef\"\"\" }\n"
-  let strict = tomlet.with_version(tomlet.default_options(), tomlet.Toml10)
-  let assert Ok(doc) = tomlet.parse_with(input, strict)
+  let assert Ok(doc) = tomlet.parse_with(input, tomlet.Toml10)
   assert tomlet.to_string(doc) == input
   Nil
 }
