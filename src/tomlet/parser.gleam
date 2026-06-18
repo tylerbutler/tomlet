@@ -96,7 +96,6 @@ fn assemble_loop(
             header: None,
           ))
       }
-
     [lexer.Spanned(william.EndOfLine(_), _), ..tail] ->
       assemble_loop(tail, state, [ast.BlankLine, ..entries], version)
 

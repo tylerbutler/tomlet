@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.2.0 - 2026-06-18
+
+
+#### Added
+
+##### `parse_value` for parsing standalone TOML value literals
+
+`parse_value(input)` parses a single TOML value literal—a string, integer, float, boolean, date, time, datetime, array, or inline table—and returns it as one of Tomlet's stable public `Value` variants, without wrapping it in a key or document. For example, `parse_value("[8000, 8001]")` yields `Ok(ArrayValue([IntValue(8000), IntValue(8001)]))`. Trailing non-comment syntax is rejected rather than silently ignored, and invalid input returns a `ParseError` whose byte offset is relative to the value text itself.
+
+
 ## v1.1.2 - 2026-06-07
 
 

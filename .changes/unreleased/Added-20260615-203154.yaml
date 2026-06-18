@@ -1,3 +1,0 @@
-kind: Added
-body: Add tomlet.parse_value for parsing standalone TOML value literals.
-time: 2026-06-15T20:31:54.049170681-07:00
