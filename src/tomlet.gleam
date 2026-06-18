@@ -493,7 +493,7 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
       // Parsed AST source_text is LF-only; CRLF is tracked separately on Document.
       let normalized = string.replace(input_without_initial_bom, "\r\n", "\n")
 
-      case parser.parse(normalized) {
+      case parser.parse(normalized, parser.Toml11) {
         Ok(root) ->
           Ok(Document(
             root: root,

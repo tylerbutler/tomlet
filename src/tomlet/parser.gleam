@@ -7,11 +7,13 @@ import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None}
 import gleam/result
 import gleam/string
 import tomlet/ast
 import tomlet/key as key_utils
+import tomlet/lexer
+import william
 
 pub type ParseError {
   Unexpected(got: String, expected: ExpectedTokenKind, offset: Int)
@@ -25,511 +27,493 @@ pub type ExpectedTokenKind {
   ExpectedSyntax
 }
 
-pub fn parse(input: String) -> Result(ast.Table, ParseError) {
-  parse_lines(
-    merge_multiline_lines(string.split(input, "\n"), []),
-    0,
-    [],
-    [],
-    [],
-    [],
-    [],
-    [],
-    [],
+/// The TOML language version a document should be parsed against. Phase 1 only
+/// implements TOML 1.0 behaviour; the variant is threaded through so later
+/// phases can opt into 1.1 relaxations without changing the call sites.
+pub type Version {
+  Toml10
+  Toml11
+}
+
+/// Parse normalized (LF-only, BOM-stripped) TOML source into the internal AST
+/// using a token-driven assembly over the `william` lexer.
+pub fn parse(input: String, version: Version) -> Result(ast.Table, ParseError) {
+  // Disallowed control characters are never valid anywhere in TOML, so reject
+  // them up front with a byte-accurate offset. This mirrors the per-line check
+  // the legacy parser performed and keeps the token walk below simpler.
+  case first_disallowed_control_offset(input) {
+    Ok(offset) -> Error(Unexpected("", ExpectedSyntax, offset))
+    Error(Nil) -> assemble(lexer.lex(input), version)
+  }
+}
+
+type AssemblyState {
+  AssemblyState(
+    active_table: List(String),
+    seen: List(List(String)),
+    explicit_tables: List(List(String)),
+    array_tables: List(List(String)),
+    array_table_parents: List(List(String)),
+    dotted_tables: List(List(String)),
   )
 }
 
-fn merge_multiline_lines(
-  lines: List(String),
-  acc: List(String),
-) -> List(String) {
-  case lines {
-    [] -> list.reverse(acc)
-    [line, ..rest] -> {
-      case line_needs_more_lines(line) {
-        True -> {
-          let #(merged, remaining) = collect_until_complete_value(rest, line)
-          merge_multiline_lines(remaining, [merged, ..acc])
-        }
-        False -> merge_multiline_lines(rest, [line, ..acc])
-      }
-    }
-  }
-}
-
-fn line_needs_more_lines(line: String) -> Bool {
-  use <- bool.guard(
-    when: starts_multiline_value(line) && !multiline_is_closed(line),
-    return: True,
-  )
-  let value = line_value_text(line)
-  case value {
-    "" -> False
-    _ -> !brackets_are_balanced(strip_inline_comments_by_line(value))
-  }
-}
-
-fn starts_multiline_value(line: String) -> Bool {
-  string.contains(line, "\"\"\"") || string.contains(line, "'''")
-}
-
-fn collect_until_complete_value(
-  lines: List(String),
-  current: String,
-) -> #(String, List(String)) {
-  case lines {
-    [] -> #(current, [])
-    [line, ..rest] -> {
-      let next = current <> "\n" <> line
-      case !line_needs_more_lines(next) {
-        True -> #(next, rest)
-        False -> collect_until_complete_value(rest, next)
-      }
-    }
-  }
-}
-
-fn multiline_is_closed(text: String) -> Bool {
-  let triples = string.split(text, "\"\"\"")
-  let literal_triples = string.split(text, "'''")
-  list.length(triples) > 2 || list.length(literal_triples) > 2
-}
-
-fn line_value_text(line: String) -> String {
-  case string.split_once(line, "=") {
-    Ok(#(_, raw_value)) -> string.trim(raw_value)
-    Error(Nil) -> ""
-  }
-}
-
-fn parse_lines(
-  lines: List(String),
-  offset: Int,
-  active_table: List(String),
-  seen: List(List(String)),
-  explicit_tables: List(List(String)),
-  array_tables: List(List(String)),
-  array_table_parents: List(List(String)),
-  dotted_tables: List(List(String)),
-  entries: List(ast.Entry),
+fn assemble(
+  spans: List(lexer.Spanned),
+  _version: Version,
 ) -> Result(ast.Table, ParseError) {
-  case lines {
-    [] -> Ok(ast.Table(entries: list.reverse(entries), header: None))
-    [line, ..rest] -> {
-      let line_len = string.byte_size(line) + 1
-      use <- bool.guard(
-        when: line == "" && rest == [],
-        return: Ok(ast.Table(entries: list.reverse(entries), header: None)),
-      )
-      case parse_line(line, offset) {
-        Ok(None) ->
-          parse_lines(
-            rest,
-            offset + line_len,
-            active_table,
-            seen,
-            explicit_tables,
-            array_tables,
-            array_table_parents,
-            dotted_tables,
-            entries,
-          )
-        Ok(Some(entry)) ->
-          case entry {
-            ast.TableHeader(header) ->
-              apply_table_header(
-                header,
-                entry,
-                rest,
-                offset,
-                line_len,
-                seen,
-                explicit_tables,
-                array_tables,
-                array_table_parents,
-                dotted_tables,
-                entries,
-              )
-            ast.KeyValue(key: key, ..) ->
-              apply_key_value(
-                key,
-                entry,
-                rest,
-                offset,
-                line_len,
-                active_table,
-                seen,
-                explicit_tables,
-                array_tables,
-                array_table_parents,
-                dotted_tables,
-                entries,
-              )
-            _ ->
-              parse_lines(
-                rest,
-                offset + line_len,
-                active_table,
-                seen,
-                explicit_tables,
-                array_tables,
-                array_table_parents,
-                dotted_tables,
-                [entry, ..entries],
-              )
-          }
-        Error(error) -> Error(error)
-      }
-    }
-  }
-}
-
-fn apply_table_header(
-  header: ast.Header,
-  entry: ast.Entry,
-  rest: List(String),
-  offset: Int,
-  line_len: Int,
-  seen: List(List(String)),
-  explicit_tables: List(List(String)),
-  array_tables: List(List(String)),
-  array_table_parents: List(List(String)),
-  dotted_tables: List(List(String)),
-  entries: List(ast.Entry),
-) -> Result(ast.Table, ParseError) {
-  let table_key = header_key(header)
-  use <- bool.guard(
-    when: key_path_conflicts_for_table_header(seen, table_key)
-      || list.contains(dotted_tables, table_key)
-      || standard_table_already_defined(header, explicit_tables, table_key)
-      || table_kind_already_defined(
-      header,
-      explicit_tables,
-      array_tables,
-      table_key,
-    )
-      || array_table_parent_already_implied(
-      header,
-      array_tables,
-      array_table_parents,
-      table_key,
+  assemble_loop(
+    spans,
+    AssemblyState(
+      active_table: [],
+      seen: [],
+      explicit_tables: [],
+      array_tables: [],
+      array_table_parents: [],
+      dotted_tables: [],
     ),
-    return: Error(KeyAlreadyInUse(table_key, offset)),
-  )
-  let next_seen = case header {
-    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-      remove_keys_under_table(seen, table_key)
-    _ -> seen
-  }
-  let next_explicit_tables = case header {
-    ast.Header(kind: ast.StandardTable, ..) -> [table_key, ..explicit_tables]
-    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-      remove_keys_under_table(explicit_tables, table_key)
-  }
-  let next_dotted_tables_after_header = case header {
-    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-      remove_keys_under_table(dotted_tables, table_key)
-    _ -> dotted_tables
-  }
-  let next_array_tables = case header {
-    ast.Header(kind: ast.ArrayOfTablesHeader, ..) -> [table_key, ..array_tables]
-    _ -> array_tables
-  }
-  let next_array_table_parents = case header {
-    ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
-      add_paths(dotted_table_paths([], table_key), array_table_parents)
-    _ -> array_table_parents
-  }
-  parse_lines(
-    rest,
-    offset + line_len,
-    table_key,
-    next_seen,
-    next_explicit_tables,
-    next_array_tables,
-    next_array_table_parents,
-    next_dotted_tables_after_header,
-    [entry, ..entries],
+    [],
   )
 }
 
-fn apply_key_value(
-  key: ast.Key,
-  entry: ast.Entry,
-  rest: List(String),
-  offset: Int,
-  line_len: Int,
-  active_table: List(String),
-  seen: List(List(String)),
-  explicit_tables: List(List(String)),
-  array_tables: List(List(String)),
-  array_table_parents: List(List(String)),
-  dotted_tables: List(List(String)),
+fn assemble_loop(
+  spans: List(lexer.Spanned),
+  state: AssemblyState,
   entries: List(ast.Entry),
 ) -> Result(ast.Table, ParseError) {
-  let full_key = list.append(active_table, key_utils.to_strings(key))
-  use <- bool.guard(
-    when: key_path_conflicts(seen, full_key)
-      || dotted_key_extends_defined_table(
-      explicit_tables,
-      array_tables,
-      active_table,
-      full_key,
-    ),
-    return: Error(KeyAlreadyInUse(full_key, offset)),
-  )
-  let next_dotted_tables =
-    add_dotted_table_paths(dotted_tables, active_table, full_key)
-  parse_lines(
-    rest,
-    offset + line_len,
-    active_table,
-    [full_key, ..seen],
-    explicit_tables,
-    array_tables,
-    array_table_parents,
-    next_dotted_tables,
-    [entry, ..entries],
-  )
-}
-
-fn parse_line(
-  line: String,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  use <- bool.guard(
-    when: string_contains_disallowed_control(line)
-      || string_contains_disallowed_unquoted_unicode(line),
-    return: Error(Unexpected(line, ExpectedSyntax, offset)),
-  )
-  let trimmed_line = string.trim(line)
-  let trimmed = string.trim(strip_inline_comment(line))
-  case trimmed {
-    "" ->
-      case string.starts_with(trimmed_line, "#") {
-        True -> Ok(Some(ast.Comment(line)))
-        False -> Ok(Some(ast.BlankLine))
+  let #(leading_ws, rest) = take_whitespace(spans, "")
+  case rest {
+    [] ->
+      case leading_ws {
+        // A trailing whitespace-only segment with no newline is still a blank
+        // line; a clean end-of-input is not.
+        "" -> Ok(ast.Table(entries: list.reverse(entries), header: None))
+        _ ->
+          Ok(ast.Table(
+            entries: list.reverse([ast.BlankLine, ..entries]),
+            header: None,
+          ))
       }
-    _ -> classify_content_line(line, trimmed_line, trimmed, offset)
+
+    [lexer.Spanned(william.EndOfLine(_), _), ..tail] ->
+      assemble_loop(tail, state, [ast.BlankLine, ..entries])
+
+    [lexer.Spanned(william.Comment(text), _), ..tail] ->
+      assemble_loop(drop_one_eol(tail), state, [
+        ast.Comment(leading_ws <> text),
+        ..entries
+      ])
+
+    [lexer.Spanned(william.OpenTable, offset), ..tail] ->
+      parse_header_tokens(tail, ast.StandardTable, offset, state, entries)
+
+    [lexer.Spanned(william.OpenArrayTable, offset), ..tail] ->
+      parse_header_tokens(tail, ast.ArrayOfTablesHeader, offset, state, entries)
+
+    [lexer.Spanned(william.BareKey(_), offset), ..]
+    | [lexer.Spanned(william.String(_, _), offset), ..] ->
+      parse_key_value_tokens(rest, offset, state, entries)
+
+    [lexer.Spanned(token, offset), ..] ->
+      Error(Unexpected(token_src(token), ExpectedSyntax, offset))
   }
 }
 
-fn classify_content_line(
-  line: String,
-  trimmed_line: String,
-  trimmed: String,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  use <- bool.guard(
-    when: string.starts_with(trimmed_line, "#"),
-    return: Ok(Some(ast.Comment(line))),
-  )
-  case string.starts_with(trimmed, "[[") && string.ends_with(trimmed, "]]") {
-    True -> parse_array_of_tables_header(trimmed, offset)
-    False ->
-      case string.starts_with(trimmed, "[") && string.ends_with(trimmed, "]") {
-        True -> parse_table_header(trimmed, offset)
-        False ->
-          case string.starts_with(trimmed, "[") {
-            True -> Error(Unexpected(trimmed, ExpectedTableHeader, offset))
-            False -> parse_key_value(line, offset)
+fn token_src(token: william.Token) -> String {
+  william.to_source([token])
+}
+
+fn take_whitespace(
+  spans: List(lexer.Spanned),
+  acc: String,
+) -> #(String, List(lexer.Spanned)) {
+  case spans {
+    [lexer.Spanned(william.Whitespace(text), _), ..rest] ->
+      take_whitespace(rest, acc <> text)
+    _ -> #(acc, spans)
+  }
+}
+
+fn drop_one_eol(spans: List(lexer.Spanned)) -> List(lexer.Spanned) {
+  case spans {
+    [lexer.Spanned(william.EndOfLine(_), _), ..rest] -> rest
+    _ -> spans
+  }
+}
+
+// Collect dot-separated key segments, skipping interior whitespace. Returns the
+// segments and the remaining spans, positioned at the first token that is not
+// part of the key (the caller validates that terminator).
+fn collect_segments(
+  spans: List(lexer.Spanned),
+  expect_segment: Bool,
+  acc: List(ast.KeySegment),
+) -> Result(#(List(ast.KeySegment), List(lexer.Spanned)), ParseError) {
+  let #(_ws, spans) = take_whitespace(spans, "")
+  case spans {
+    [lexer.Spanned(william.BareKey(name), _), ..rest] if expect_segment ->
+      collect_segments(rest, False, [ast.BareKeySegment(name), ..acc])
+
+    [lexer.Spanned(william.String(delimiter, value), offset), ..rest]
+      if expect_segment
+    ->
+      case key_segment_from_string(delimiter, value) {
+        Ok(segment) -> collect_segments(rest, False, [segment, ..acc])
+        Error(Nil) ->
+          Error(Unexpected(
+            token_src(william.String(delimiter, value)),
+            ExpectedKey,
+            offset,
+          ))
+      }
+
+    [lexer.Spanned(william.Dot, _), ..rest] if !expect_segment ->
+      collect_segments(rest, True, acc)
+
+    _ ->
+      case expect_segment {
+        True ->
+          case spans {
+            [lexer.Spanned(token, offset), ..] ->
+              Error(Unexpected(token_src(token), ExpectedKey, offset))
+            [] -> Error(Unexpected("", ExpectedKey, 0))
           }
+        False -> Ok(#(list.reverse(acc), spans))
       }
   }
 }
 
-fn parse_table_header(
-  trimmed: String,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  parse_header(trimmed, 1, ast.StandardTable, offset)
+fn key_segment_from_string(
+  delimiter: william.StringDelimiter,
+  value: String,
+) -> Result(ast.KeySegment, Nil) {
+  case delimiter {
+    william.BasicString ->
+      case basic_string_content_is_valid(value) {
+        True ->
+          Ok(ast.QuotedKeySegment(basic_key_value(value), "\"" <> value <> "\""))
+        False -> Error(Nil)
+      }
+    william.LiteralString ->
+      Ok(ast.QuotedKeySegment(value, "'" <> value <> "'"))
+    // Multi-line strings are not valid keys.
+    william.MultilineBasicString | william.MultilineLiteralString -> Error(Nil)
+  }
 }
 
-fn parse_array_of_tables_header(
-  trimmed: String,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  parse_header(trimmed, 2, ast.ArrayOfTablesHeader, offset)
+fn parse_key_value_tokens(
+  spans: List(lexer.Spanned),
+  key_offset: Int,
+  state: AssemblyState,
+  entries: List(ast.Entry),
+) -> Result(ast.Table, ParseError) {
+  use #(segments, after_key) <- result.try(collect_segments(spans, True, []))
+  case after_key {
+    [lexer.Spanned(william.Equal, equal_offset), ..after_equal] -> {
+      let key = ast.Key(segments)
+      use #(value, trailing, rest) <- result.try(parse_value_tokens(
+        after_equal,
+        equal_offset,
+      ))
+      let entry =
+        ast.KeyValue(
+          leading: ast.Trivia(""),
+          key: key,
+          value: value,
+          trailing: ast.Trivia(trailing <> "\n"),
+        )
+      use next_state <- result.try(apply_key_value_state(state, key, key_offset))
+      assemble_loop(rest, next_state, [entry, ..entries])
+    }
+    [lexer.Spanned(token, offset), ..] ->
+      Error(Unexpected(token_src(token), ExpectedSyntax, offset))
+    [] -> Error(Unexpected("", ExpectedSyntax, key_offset))
+  }
 }
 
-fn parse_header(
-  trimmed: String,
-  delimiter_width: Int,
+// Determine the value's token span, reconstruct its exact source text, decode it
+// through the shared value parser, then gather trailing trivia up to the line
+// ending. Returns the value, the trailing trivia text (without the newline), and
+// the spans following the consumed line.
+fn parse_value_tokens(
+  spans: List(lexer.Spanned),
+  equal_offset: Int,
+) -> Result(#(ast.Value, String, List(lexer.Spanned)), ParseError) {
+  let #(_ws, spans) = take_whitespace(spans, "")
+  case spans {
+    [lexer.Spanned(william.OpenBracket, offset), ..] -> {
+      let #(span, rest) = balanced_span(spans, 0, [])
+      finish_value(span, offset, rest)
+    }
+    [lexer.Spanned(william.OpenBrace, offset), ..] -> {
+      let #(span, rest) = balanced_span(spans, 0, [])
+      finish_value(span, offset, rest)
+    }
+    // No value before the line ends: report the missing value with the offset
+    // of whatever follows the `=`.
+    [lexer.Spanned(william.EndOfLine(_), offset), ..]
+    | [lexer.Spanned(william.Comment(_), offset), ..] -> {
+      use value <- result.map(parse_value("", offset))
+      #(value, "", spans)
+    }
+    [] -> {
+      use value <- result.map(parse_value("", equal_offset + 1))
+      #(value, "", [])
+    }
+    [lexer.Spanned(token, offset), ..rest] -> {
+      use value <- result.try(parse_value(token_src(token), offset))
+      use #(trailing, after) <- result.map(scan_trailing(rest, ""))
+      #(value, trailing, after)
+    }
+  }
+}
+
+fn finish_value(
+  span: List(lexer.Spanned),
+  offset: Int,
+  rest: List(lexer.Spanned),
+) -> Result(#(ast.Value, String, List(lexer.Spanned)), ParseError) {
+  let source = spans_source(span)
+  use value <- result.try(parse_value(source, offset))
+  use #(trailing, after) <- result.map(scan_trailing(rest, ""))
+  #(value, trailing, after)
+}
+
+fn spans_source(spans: List(lexer.Spanned)) -> String {
+  spans
+  |> list.map(fn(span) {
+    let lexer.Spanned(token, _) = span
+    token
+  })
+  |> william.to_source
+}
+
+// Consume tokens until a value construct (array or inline table) returns to the
+// top level, tracking bracket and brace nesting. If the stream ends while still
+// nested, the whole remainder is returned so `parse_value` rejects it.
+fn balanced_span(
+  spans: List(lexer.Spanned),
+  depth: Int,
+  acc: List(lexer.Spanned),
+) -> #(List(lexer.Spanned), List(lexer.Spanned)) {
+  case spans {
+    [] -> #(list.reverse(acc), [])
+    [span, ..rest] -> {
+      let lexer.Spanned(token, _) = span
+      let next_depth = case token {
+        william.OpenBracket | william.OpenBrace -> depth + 1
+        william.CloseBracket | william.CloseBrace -> depth - 1
+        _ -> depth
+      }
+      let acc = [span, ..acc]
+      case next_depth == 0 {
+        True -> #(list.reverse(acc), rest)
+        False -> balanced_span(rest, next_depth, acc)
+      }
+    }
+  }
+}
+
+// After a value, only whitespace and an optional comment may precede the line
+// ending. Returns the trailing trivia text (without the newline) and the spans
+// following the consumed line ending.
+fn scan_trailing(
+  spans: List(lexer.Spanned),
+  acc: String,
+) -> Result(#(String, List(lexer.Spanned)), ParseError) {
+  case spans {
+    [] -> Ok(#(acc, []))
+    [lexer.Spanned(william.Whitespace(text), _), ..rest] ->
+      scan_trailing(rest, acc <> text)
+    [lexer.Spanned(william.Comment(text), _), ..rest] ->
+      scan_trailing(rest, acc <> text)
+    [lexer.Spanned(william.EndOfLine(_), _), ..rest] -> Ok(#(acc, rest))
+    [lexer.Spanned(token, offset), ..] ->
+      Error(Unexpected(token_src(token), ExpectedSyntax, offset))
+  }
+}
+
+fn parse_header_tokens(
+  spans: List(lexer.Spanned),
   kind: ast.HeaderKind,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  let name =
-    trimmed
-    |> string.drop_start(delimiter_width)
-    |> string.drop_end(delimiter_width)
-    |> string.trim
+  open_offset: Int,
+  state: AssemblyState,
+  entries: List(ast.Entry),
+) -> Result(ast.Table, ParseError) {
+  use #(segments, after_key) <- result.try(collect_segments(spans, True, []))
+  let closer = case kind {
+    ast.StandardTable -> after_key_is_close_table(after_key)
+    ast.ArrayOfTablesHeader -> after_key_is_close_array_table(after_key)
+  }
+  case closer {
+    Ok(after_close) -> {
+      use rest <- result.try(scan_header_trailing(after_close, open_offset))
+      let header = ast.Header(ast.Key(segments), kind, ast.Trivia(""))
+      let entry = ast.TableHeader(header)
+      use next_state <- result.try(apply_header_state(
+        state,
+        header,
+        open_offset,
+      ))
+      assemble_loop(rest, next_state, [entry, ..entries])
+    }
+    Error(Nil) -> Error(Unexpected("", ExpectedTableHeader, open_offset))
+  }
+}
 
-  case parse_key(name) {
-    Ok(key) ->
+fn after_key_is_close_table(
+  spans: List(lexer.Spanned),
+) -> Result(List(lexer.Spanned), Nil) {
+  case spans {
+    [lexer.Spanned(william.CloseTable, _), ..rest] -> Ok(rest)
+    _ -> Error(Nil)
+  }
+}
+
+fn after_key_is_close_array_table(
+  spans: List(lexer.Spanned),
+) -> Result(List(lexer.Spanned), Nil) {
+  case spans {
+    [lexer.Spanned(william.CloseArrayTable, _), ..rest] -> Ok(rest)
+    _ -> Error(Nil)
+  }
+}
+
+fn scan_header_trailing(
+  spans: List(lexer.Spanned),
+  open_offset: Int,
+) -> Result(List(lexer.Spanned), ParseError) {
+  case spans {
+    [] -> Ok([])
+    [lexer.Spanned(william.Whitespace(_), _), ..rest] ->
+      scan_header_trailing(rest, open_offset)
+    [lexer.Spanned(william.Comment(_), _), ..rest] ->
+      scan_header_trailing(rest, open_offset)
+    [lexer.Spanned(william.EndOfLine(_), _), ..rest] -> Ok(rest)
+    [lexer.Spanned(_, _), ..] ->
+      Error(Unexpected("", ExpectedTableHeader, open_offset))
+  }
+}
+
+fn apply_key_value_state(
+  state: AssemblyState,
+  key: ast.Key,
+  key_offset: Int,
+) -> Result(AssemblyState, ParseError) {
+  let full_key = list.append(state.active_table, key_utils.to_strings(key))
+  case
+    key_path_conflicts(state.seen, full_key)
+    || dotted_key_extends_defined_table(
+      state.explicit_tables,
+      state.array_tables,
+      state.active_table,
+      full_key,
+    )
+  {
+    True -> Error(KeyAlreadyInUse(full_key, key_offset))
+    False ->
       Ok(
-        Some(
-          ast.TableHeader(ast.Header(
-            key: key,
-            kind: kind,
-            trivia: ast.Trivia(""),
-          )),
+        AssemblyState(
+          ..state,
+          seen: [full_key, ..state.seen],
+          dotted_tables: add_dotted_table_paths(
+            state.dotted_tables,
+            state.active_table,
+            full_key,
+          ),
         ),
       )
-    Error(Nil) -> Error(Unexpected(name, ExpectedKey, offset + delimiter_width))
   }
 }
 
-fn parse_key_value(
-  line: String,
-  offset: Int,
-) -> Result(Option(ast.Entry), ParseError) {
-  case split_key_value(line) {
-    Ok(#(raw_key, raw_value)) -> {
-      let key_text = string.trim(raw_key)
-      let #(value_text, trailing) = split_value_and_trailing(raw_value)
-      let value_offset =
-        offset
-        + string.byte_size(raw_key)
-        + 1
-        + trim_start_byte_offset(raw_value)
-      case parse_key(key_text) {
-        Ok(key) ->
-          case parse_value(value_text, value_offset) {
-            Ok(value) ->
-              Ok(
-                Some(ast.KeyValue(
-                  leading: ast.Trivia(""),
-                  key: key,
-                  value: value,
-                  trailing: ast.Trivia(trailing <> "\n"),
-                )),
-              )
-            Error(error) -> Error(error)
-          }
-        Error(Nil) -> Error(Unexpected(key_text, ExpectedKey, offset))
+fn apply_header_state(
+  state: AssemblyState,
+  header: ast.Header,
+  open_offset: Int,
+) -> Result(AssemblyState, ParseError) {
+  let table_key = header_key(header)
+  case
+    key_path_conflicts_for_table_header(state.seen, table_key)
+    || list.contains(state.dotted_tables, table_key)
+    || standard_table_already_defined(header, state.explicit_tables, table_key)
+    || table_kind_already_defined(
+      header,
+      state.explicit_tables,
+      state.array_tables,
+      table_key,
+    )
+    || array_table_parent_already_implied(
+      header,
+      state.array_tables,
+      state.array_table_parents,
+      table_key,
+    )
+  {
+    True -> Error(KeyAlreadyInUse(table_key, open_offset))
+    False -> {
+      let is_array = case header {
+        ast.Header(kind: ast.ArrayOfTablesHeader, ..) -> True
+        _ -> False
       }
-    }
-    Error(Nil) -> Error(Unexpected(line, ExpectedSyntax, offset))
-  }
-}
-
-// Split the text after `=` into the value's source span and the trailing
-// trivia (surrounding whitespace and any inline comment plus the newline).
-//
-// Arrays and inline tables can carry interior comments and span multiple lines,
-// so their span is found by scanning to the matching close bracket; the full
-// source (comments included) is kept so it round-trips. Scalars and strings
-// cannot contain a top-level `#`, so the value is a contiguous prefix that the
-// comment stripper recovers directly.
-fn split_value_and_trailing(raw_value: String) -> #(String, String) {
-  let trimmed_start = string.drop_start(raw_value, trim_start_offset(raw_value))
-  case value_starts_span(trimmed_start) {
-    True -> {
-      let value_source =
-        string.slice(trimmed_start, 0, value_span_length(trimmed_start))
-      let trailing =
-        string.drop_start(trimmed_start, string.length(value_source))
-      // Anything other than whitespace and a comment after the close bracket is
-      // a second token on the line, i.e. invalid TOML. Fall back to the scalar
-      // split so the whole text is parsed as one value and rejected.
-      case trailing_is_trivia(trailing) {
-        True -> #(value_source, trailing)
-        False -> scalar_split(trimmed_start)
+      let next_seen = case is_array {
+        True -> remove_keys_under_table(state.seen, table_key)
+        False -> state.seen
       }
+      let next_explicit = case header {
+        ast.Header(kind: ast.StandardTable, ..) -> [
+          table_key,
+          ..state.explicit_tables
+        ]
+        ast.Header(kind: ast.ArrayOfTablesHeader, ..) ->
+          remove_keys_under_table(state.explicit_tables, table_key)
+      }
+      let next_dotted = case is_array {
+        True -> remove_keys_under_table(state.dotted_tables, table_key)
+        False -> state.dotted_tables
+      }
+      let next_arrays = case is_array {
+        True -> [table_key, ..state.array_tables]
+        False -> state.array_tables
+      }
+      let next_parents = case is_array {
+        True ->
+          add_paths(
+            dotted_table_paths([], table_key),
+            state.array_table_parents,
+          )
+        False -> state.array_table_parents
+      }
+      Ok(AssemblyState(
+        active_table: table_key,
+        seen: next_seen,
+        explicit_tables: next_explicit,
+        array_tables: next_arrays,
+        array_table_parents: next_parents,
+        dotted_tables: next_dotted,
+      ))
     }
-    False -> scalar_split(trimmed_start)
   }
 }
 
-fn scalar_split(trimmed_start: String) -> #(String, String) {
-  let value_text = string.trim(strip_value_comments(trimmed_start))
-  let trailing = string.drop_start(trimmed_start, string.length(value_text))
-  #(value_text, trailing)
+fn first_disallowed_control_offset(input: String) -> Result(Int, Nil) {
+  first_disallowed_control_offset_loop(string.to_graphemes(input), 0)
 }
 
-fn trailing_is_trivia(text: String) -> Bool {
-  case string.trim(text) {
-    "" -> True
-    rest -> string.starts_with(rest, "#")
-  }
-}
-
-fn value_starts_span(text: String) -> Bool {
-  string.starts_with(text, "[") || string.starts_with(text, "{")
-}
-
-type SpanState {
-  SpanOutside
-  SpanBasic
-  SpanLiteral
-  SpanMultiBasic
-  SpanMultiLiteral
-  SpanComment
-}
-
-// Number of graphemes the value occupies, found by tracking string/comment
-// state and bracket nesting until the construct returns to the top level.
-fn value_span_length(text: String) -> Int {
-  scan_value_span(string.to_graphemes(text), SpanOutside, 0, 0)
-}
-
-fn scan_value_span(
+fn first_disallowed_control_offset_loop(
   chars: List(String),
-  state: SpanState,
-  depth: Int,
-  count: Int,
-) -> Int {
-  use <- bool.guard(
-    when: count > 0 && state == SpanOutside && depth == 0,
-    return: count,
-  )
-  case state, chars {
-    _, [] -> count
-
-    SpanOutside, ["\"", "\"", "\"", ..rest] ->
-      scan_value_span(rest, SpanMultiBasic, depth, count + 3)
-    SpanOutside, ["'", "'", "'", ..rest] ->
-      scan_value_span(rest, SpanMultiLiteral, depth, count + 3)
-    SpanOutside, ["\"", ..rest] ->
-      scan_value_span(rest, SpanBasic, depth, count + 1)
-    SpanOutside, ["'", ..rest] ->
-      scan_value_span(rest, SpanLiteral, depth, count + 1)
-    SpanOutside, ["#", ..rest] ->
-      scan_value_span(rest, SpanComment, depth, count + 1)
-    SpanOutside, ["[", ..rest] | SpanOutside, ["{", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth + 1, count + 1)
-    SpanOutside, ["]", ..rest] | SpanOutside, ["}", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth - 1, count + 1)
-    SpanOutside, [_, ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 1)
-
-    SpanComment, ["\n", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 1)
-    SpanComment, [_, ..rest] ->
-      scan_value_span(rest, SpanComment, depth, count + 1)
-
-    SpanBasic, ["\\", _, ..rest] ->
-      scan_value_span(rest, SpanBasic, depth, count + 2)
-    SpanBasic, ["\"", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 1)
-    SpanBasic, [_, ..rest] -> scan_value_span(rest, SpanBasic, depth, count + 1)
-
-    SpanLiteral, ["'", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 1)
-    SpanLiteral, [_, ..rest] ->
-      scan_value_span(rest, SpanLiteral, depth, count + 1)
-
-    SpanMultiBasic, ["\\", _, ..rest] ->
-      scan_value_span(rest, SpanMultiBasic, depth, count + 2)
-    SpanMultiBasic, ["\"", "\"", "\"", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 3)
-    SpanMultiBasic, [_, ..rest] ->
-      scan_value_span(rest, SpanMultiBasic, depth, count + 1)
-
-    SpanMultiLiteral, ["'", "'", "'", ..rest] ->
-      scan_value_span(rest, SpanOutside, depth, count + 3)
-    SpanMultiLiteral, [_, ..rest] ->
-      scan_value_span(rest, SpanMultiLiteral, depth, count + 1)
+  offset: Int,
+) -> Result(Int, Nil) {
+  case chars {
+    [] -> Error(Nil)
+    [char, ..rest] ->
+      case char_is_disallowed_control(char) {
+        True -> Ok(offset)
+        False ->
+          first_disallowed_control_offset_loop(
+            rest,
+            offset + string.byte_size(char),
+          )
+      }
   }
 }
 
@@ -1100,48 +1084,8 @@ fn split_top_level_commas_loop(
   }
 }
 
-fn trim_start_offset(text: String) -> Int {
-  string.length(text) - string.length(string.trim_start(text))
-}
-
 fn trim_start_byte_offset(text: String) -> Int {
   string.byte_size(text) - string.byte_size(string.trim_start(text))
-}
-
-fn brackets_are_balanced(text: String) -> Bool {
-  bracket_depth(string.to_graphemes(text), 0, False, False) == 0
-}
-
-fn bracket_depth(
-  chars: List(String),
-  depth: Int,
-  in_basic: Bool,
-  in_literal: Bool,
-) -> Int {
-  case chars {
-    [] -> depth
-    [char, ..rest] ->
-      case char, in_basic, in_literal {
-        "\\", True, False -> {
-          case rest {
-            [] -> bracket_depth(rest, depth, in_basic, in_literal)
-            [_, ..after_escape] ->
-              bracket_depth(after_escape, depth, in_basic, in_literal)
-          }
-        }
-        "\"", _, False -> bracket_depth(rest, depth, !in_basic, in_literal)
-        "'", False, _ -> bracket_depth(rest, depth, in_basic, !in_literal)
-        "[", False, False ->
-          bracket_depth(rest, depth + 1, in_basic, in_literal)
-        "{", False, False ->
-          bracket_depth(rest, depth + 1, in_basic, in_literal)
-        "]", False, False ->
-          bracket_depth(rest, depth - 1, in_basic, in_literal)
-        "}", False, False ->
-          bracket_depth(rest, depth - 1, in_basic, in_literal)
-        _, _, _ -> bracket_depth(rest, depth, in_basic, in_literal)
-      }
-  }
 }
 
 fn parse_array_value(
@@ -1351,16 +1295,6 @@ fn strip_inline_comments_by_line(text: String) -> String {
   |> string.split("\n")
   |> list.map(strip_inline_comment)
   |> string.join(with: "\n")
-}
-
-fn strip_value_comments(text: String) -> String {
-  let trimmed = string.trim_start(text)
-  case
-    string.starts_with(trimmed, "\"\"\"") || string.starts_with(trimmed, "'''")
-  {
-    True -> strip_inline_comment(text)
-    False -> strip_inline_comments_by_line(text)
-  }
 }
 
 fn strip_inline_comment_loop(
@@ -2171,75 +2105,6 @@ fn char_is_disallowed_control(char: String) -> Bool {
     | "\u{001F}"
     | "\u{007F}" -> True
     _ -> False
-  }
-}
-
-fn string_contains_disallowed_control(text: String) -> Bool {
-  string_contains_disallowed_control_loop(string.to_graphemes(text))
-}
-
-fn string_contains_disallowed_control_loop(chars: List(String)) -> Bool {
-  case chars {
-    [] -> False
-    [char, ..rest] ->
-      char_is_disallowed_control(char)
-      || string_contains_disallowed_control_loop(rest)
-  }
-}
-
-fn string_contains_disallowed_unquoted_unicode(text: String) -> Bool {
-  string_contains_disallowed_unquoted_unicode_loop(
-    string.to_graphemes(text),
-    False,
-    False,
-    False,
-  )
-}
-
-fn string_contains_disallowed_unquoted_unicode_loop(
-  chars: List(String),
-  in_basic_string: Bool,
-  in_literal_string: Bool,
-  escaped: Bool,
-) -> Bool {
-  case chars {
-    [] -> False
-    ["#", ..] if !in_basic_string && !in_literal_string -> False
-    ["\\", ..rest] if in_basic_string && !escaped ->
-      string_contains_disallowed_unquoted_unicode_loop(
-        rest,
-        in_basic_string,
-        in_literal_string,
-        True,
-      )
-    ["\"", ..rest] if !in_literal_string && !escaped ->
-      string_contains_disallowed_unquoted_unicode_loop(
-        rest,
-        !in_basic_string,
-        in_literal_string,
-        False,
-      )
-    ["'", ..rest] if !in_basic_string ->
-      string_contains_disallowed_unquoted_unicode_loop(
-        rest,
-        in_basic_string,
-        !in_literal_string,
-        False,
-      )
-    [char, ..rest] -> {
-      let disallowed =
-        !in_basic_string
-        && !in_literal_string
-        && { char == "\u{3000}" || char == "\u{FEFF}" }
-
-      disallowed
-      || string_contains_disallowed_unquoted_unicode_loop(
-        rest,
-        in_basic_string,
-        in_literal_string,
-        False,
-      )
-    }
   }
 }
 
