@@ -1009,42 +1009,6 @@ fn split_top_level_commas_loop(
         ..parts
       ])
 
-    StripNormal, ["\"", "\"", "\"", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripMultiBasic,
-        current <> "\"\"\"",
-        current_start,
-        parts,
-      )
-    StripNormal, ["'", "'", "'", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripMultiLiteral,
-        current <> "'''",
-        current_start,
-        parts,
-      )
-    StripNormal, ["\"", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripBasic,
-        current <> "\"",
-        current_start,
-        parts,
-      )
-    StripNormal, ["'", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripLiteral,
-        current <> "'",
-        current_start,
-        parts,
-      )
     StripNormal, [",", ..rest] if depth == 0 ->
       split_top_level_commas_loop(
         rest,
@@ -1096,109 +1060,19 @@ fn split_top_level_commas_loop(
         current_start,
         parts,
       )
-    StripNormal, [char, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripNormal,
-        current <> char,
-        current_start,
-        parts,
-      )
 
-    StripBasic, ["\\", escaped, ..rest] ->
+    _, _ -> {
+      let StripStep(rest, next_state, consumed) =
+        strip_state_step(chars, state, False)
       split_top_level_commas_loop(
         rest,
         depth,
-        StripBasic,
-        current <> "\\" <> escaped,
+        next_state,
+        current <> consumed,
         current_start,
         parts,
       )
-    StripBasic, ["\"", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripNormal,
-        current <> "\"",
-        current_start,
-        parts,
-      )
-    StripBasic, [char, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripBasic,
-        current <> char,
-        current_start,
-        parts,
-      )
-
-    StripLiteral, ["'", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripNormal,
-        current <> "'",
-        current_start,
-        parts,
-      )
-    StripLiteral, [char, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripLiteral,
-        current <> char,
-        current_start,
-        parts,
-      )
-
-    StripMultiBasic, ["\\", escaped, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripMultiBasic,
-        current <> "\\" <> escaped,
-        current_start,
-        parts,
-      )
-    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripNormal,
-        current <> "\"\"\"",
-        current_start,
-        parts,
-      )
-    StripMultiBasic, [char, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripMultiBasic,
-        current <> char,
-        current_start,
-        parts,
-      )
-
-    StripMultiLiteral, ["'", "'", "'", ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripNormal,
-        current <> "'''",
-        current_start,
-        parts,
-      )
-    StripMultiLiteral, [char, ..rest] ->
-      split_top_level_commas_loop(
-        rest,
-        depth,
-        StripMultiLiteral,
-        current <> char,
-        current_start,
-        parts,
-      )
+    }
   }
 }
 
@@ -1327,14 +1201,6 @@ fn inline_table_newlines_are_valid_loop(
   case state, chars {
     _, [] -> True
 
-    StripNormal, ["\"", "\"", "\"", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
-    StripNormal, ["'", "'", "'", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripMultiLiteral)
-    StripNormal, ["\"", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
-    StripNormal, ["'", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripLiteral)
     StripNormal, ["\n", ..rest] ->
       case depth > 0 {
         True -> inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
@@ -1348,32 +1214,11 @@ fn inline_table_newlines_are_valid_loop(
       inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
     StripNormal, ["}", ..rest] ->
       inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
-    StripNormal, [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
 
-    StripBasic, ["\\", _, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
-    StripBasic, ["\"", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
-    StripBasic, [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripBasic)
-
-    StripLiteral, ["'", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
-    StripLiteral, [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripLiteral)
-
-    StripMultiBasic, ["\\", _, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
-    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
-    StripMultiBasic, [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripMultiBasic)
-
-    StripMultiLiteral, ["'", "'", "'", ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
-    StripMultiLiteral, [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, StripMultiLiteral)
+    _, _ -> {
+      let StripStep(rest, next_state, _) = strip_state_step(chars, state, False)
+      inline_table_newlines_are_valid_loop(rest, depth, next_state)
+    }
   }
 }
 
@@ -1453,6 +1298,51 @@ type StripState {
   StripMultiLiteral
 }
 
+type StripStep {
+  StripStep(rest: List(String), state: StripState, consumed: String)
+}
+
+fn strip_state_step(
+  chars: List(String),
+  state: StripState,
+  close_single_line_on_newline: Bool,
+) -> StripStep {
+  case state, chars {
+    _, [] -> StripStep([], state, "")
+
+    StripNormal, ["\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripMultiBasic, "\"\"\"")
+    StripNormal, ["'", "'", "'", ..rest] ->
+      StripStep(rest, StripMultiLiteral, "'''")
+    StripNormal, ["\"", ..rest] -> StripStep(rest, StripBasic, "\"")
+    StripNormal, ["'", ..rest] -> StripStep(rest, StripLiteral, "'")
+    StripNormal, [char, ..rest] -> StripStep(rest, StripNormal, char)
+
+    StripBasic, ["\\", escaped, ..rest] ->
+      StripStep(rest, StripBasic, "\\" <> escaped)
+    StripBasic, ["\"", ..rest] -> StripStep(rest, StripNormal, "\"")
+    StripBasic, ["\n", ..rest] if close_single_line_on_newline ->
+      StripStep(rest, StripNormal, "\n")
+    StripBasic, [char, ..rest] -> StripStep(rest, StripBasic, char)
+
+    StripLiteral, ["'", ..rest] -> StripStep(rest, StripNormal, "'")
+    StripLiteral, ["\n", ..rest] if close_single_line_on_newline ->
+      StripStep(rest, StripNormal, "\n")
+    StripLiteral, [char, ..rest] -> StripStep(rest, StripLiteral, char)
+
+    StripMultiBasic, ["\\", escaped, ..rest] ->
+      StripStep(rest, StripMultiBasic, "\\" <> escaped)
+    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripNormal, "\"\"\"")
+    StripMultiBasic, [char, ..rest] -> StripStep(rest, StripMultiBasic, char)
+
+    StripMultiLiteral, ["'", "'", "'", ..rest] ->
+      StripStep(rest, StripNormal, "'''")
+    StripMultiLiteral, [char, ..rest] ->
+      StripStep(rest, StripMultiLiteral, char)
+  }
+}
+
 fn strip_inline_comments_loop(
   chars: List(String),
   state: StripState,
@@ -1461,54 +1351,17 @@ fn strip_inline_comments_loop(
   case state, chars {
     _, [] -> acc
 
-    StripNormal, ["\"", "\"", "\"", ..rest] ->
-      strip_inline_comments_loop(rest, StripMultiBasic, acc <> "\"\"\"")
-    StripNormal, ["'", "'", "'", ..rest] ->
-      strip_inline_comments_loop(rest, StripMultiLiteral, acc <> "'''")
-    StripNormal, ["\"", ..rest] ->
-      strip_inline_comments_loop(rest, StripBasic, acc <> "\"")
-    StripNormal, ["'", ..rest] ->
-      strip_inline_comments_loop(rest, StripLiteral, acc <> "'")
     StripNormal, ["#", ..rest] ->
-      strip_inline_comments_loop(drop_to_newline(rest), StripNormal, acc)
-    StripNormal, [char, ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> char)
-
-    StripBasic, ["\\", escaped, ..rest] ->
-      strip_inline_comments_loop(rest, StripBasic, acc <> "\\" <> escaped)
-    StripBasic, ["\"", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "\"")
-    StripBasic, ["\n", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "\n")
-    StripBasic, [char, ..rest] ->
-      strip_inline_comments_loop(rest, StripBasic, acc <> char)
-
-    StripLiteral, ["'", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "'")
-    StripLiteral, ["\n", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "\n")
-    StripLiteral, [char, ..rest] ->
-      strip_inline_comments_loop(rest, StripLiteral, acc <> char)
-
-    StripMultiBasic, ["\\", escaped, ..rest] ->
-      strip_inline_comments_loop(rest, StripMultiBasic, acc <> "\\" <> escaped)
-    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "\"\"\"")
-    StripMultiBasic, [char, ..rest] ->
-      strip_inline_comments_loop(rest, StripMultiBasic, acc <> char)
-
-    StripMultiLiteral, ["'", "'", "'", ..rest] ->
-      strip_inline_comments_loop(rest, StripNormal, acc <> "'''")
-    StripMultiLiteral, [char, ..rest] ->
-      strip_inline_comments_loop(rest, StripMultiLiteral, acc <> char)
-  }
-}
-
-fn drop_to_newline(chars: List(String)) -> List(String) {
-  case chars {
-    [] -> []
-    ["\n", ..] -> chars
-    [_, ..rest] -> drop_to_newline(rest)
+      strip_inline_comments_loop(
+        list.drop_while(rest, fn(char) { char != "\n" }),
+        StripNormal,
+        acc,
+      )
+    _, _ -> {
+      let StripStep(rest, next_state, consumed) =
+        strip_state_step(chars, state, True)
+      strip_inline_comments_loop(rest, next_state, acc <> consumed)
+    }
   }
 }
 

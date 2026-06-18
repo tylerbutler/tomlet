@@ -26,60 +26,20 @@ STRICT_GENERATED = ROOT / "test" / "tomlet" / "strict_1_0_generated_test.gleam"
 ROUNDTRIP_UNSUPPORTED = set()
 
 # Fixtures listed in the TOML 1.1 valid manifest but not the TOML 1.0 valid
-# manifest that nonetheless contain only TOML 1.0-compatible syntax (mostly the
-# spec-1.1.0/* examples that simply renamed their spec-1.0.0/* predecessors).
-# Strict TOML 1.0 mode correctly *accepts* these, so they belong in the strict
-# accept suite rather than the strict reject suite. Entries are `valid/`-relative
-# paths without the `.toml` suffix and are validated to be a subset of the
-# 1.1-only valid set.
-STRICT_1_0_COMPAT_IN_1_1 = {
-    "spec-1.1.0/common-0",
-    "spec-1.1.0/common-1",
-    "spec-1.1.0/common-10",
-    "spec-1.1.0/common-11",
-    "spec-1.1.0/common-13",
-    "spec-1.1.0/common-14",
-    "spec-1.1.0/common-15",
-    "spec-1.1.0/common-16",
-    "spec-1.1.0/common-17",
-    "spec-1.1.0/common-18",
-    "spec-1.1.0/common-19",
-    "spec-1.1.0/common-20",
-    "spec-1.1.0/common-21",
-    "spec-1.1.0/common-22",
-    "spec-1.1.0/common-23",
-    "spec-1.1.0/common-24",
-    "spec-1.1.0/common-25",
-    "spec-1.1.0/common-26",
-    "spec-1.1.0/common-27",
-    "spec-1.1.0/common-28",
-    "spec-1.1.0/common-3",
-    "spec-1.1.0/common-30",
-    "spec-1.1.0/common-32",
-    "spec-1.1.0/common-33",
-    "spec-1.1.0/common-35",
-    "spec-1.1.0/common-36",
-    "spec-1.1.0/common-37",
-    "spec-1.1.0/common-38",
-    "spec-1.1.0/common-39",
-    "spec-1.1.0/common-4",
-    "spec-1.1.0/common-40",
-    "spec-1.1.0/common-41",
-    "spec-1.1.0/common-42",
-    "spec-1.1.0/common-43",
-    "spec-1.1.0/common-44",
-    "spec-1.1.0/common-45",
-    "spec-1.1.0/common-46",
-    "spec-1.1.0/common-48",
-    "spec-1.1.0/common-49",
-    "spec-1.1.0/common-50",
-    "spec-1.1.0/common-51",
-    "spec-1.1.0/common-52",
-    "spec-1.1.0/common-53",
-    "spec-1.1.0/common-6",
-    "spec-1.1.0/common-7",
-    "spec-1.1.0/common-8",
-    "spec-1.1.0/common-9",
+# manifest that use 1.1-only syntax. Strict TOML 1.0 mode must reject these;
+# the remaining 1.1-only manifest entries are spec example renames that strict
+# mode should still accept. Entries are `valid/`-relative paths without `.toml`.
+STRICT_1_0_REJECT_IN_1_1 = {
+    "datetime/no-seconds",
+    "inline-table/newline",
+    "inline-table/newline-comment",
+    "spec-1.1.0/common-12",
+    "spec-1.1.0/common-29",
+    "spec-1.1.0/common-31",
+    "spec-1.1.0/common-34",
+    "spec-1.1.0/common-47",
+    "string/escape-esc",
+    "string/hex-escape",
 }
 
 INVALID_BYTE_FIXTURES = {
@@ -318,26 +278,23 @@ def write_strict_tests(
         path.with_suffix("").relative_to("valid").as_posix() for path in only_1_1
     }
     assert_known_paths(
-        "STRICT_1_0_COMPAT_IN_1_1", STRICT_1_0_COMPAT_IN_1_1, only_1_1_paths
+        "STRICT_1_0_REJECT_IN_1_1", STRICT_1_0_REJECT_IN_1_1, only_1_1_paths
     )
 
-    # Fixtures that strict TOML 1.0 must accept: every valid 1.0 fixture, plus
-    # those 1.1-listed fixtures whose content is still valid 1.0.
     accept = list(valid_1_0)
     accept.extend(
         path
         for path in only_1_1
         if path.with_suffix("").relative_to("valid").as_posix()
-        in STRICT_1_0_COMPAT_IN_1_1
+        not in STRICT_1_0_REJECT_IN_1_1
     )
     accept.sort()
 
-    # Fixtures that strict TOML 1.0 must reject: the genuinely 1.1-only syntax.
     reject = [
         path
         for path in only_1_1
         if path.with_suffix("").relative_to("valid").as_posix()
-        not in STRICT_1_0_COMPAT_IN_1_1
+        in STRICT_1_0_REJECT_IN_1_1
     ]
 
     generated.parent.mkdir(parents=True, exist_ok=True)
