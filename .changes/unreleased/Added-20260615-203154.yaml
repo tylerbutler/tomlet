@@ -1,3 +1,6 @@
 kind: Added
-body: Add tomlet.parse_value for parsing standalone TOML value literals.
+body: |-
+  `parse_value` for parsing standalone TOML value literals
+
+  `parse_value(input)` parses a single TOML value literal—a string, integer, float, boolean, date, time, datetime, array, or inline table—and returns it as one of Tomlet's stable public `Value` variants, without wrapping it in a key or document. For example, `parse_value("[8000, 8001]")` yields `Ok(ArrayValue([IntValue(8000), IntValue(8001)]))`. Trailing non-comment syntax is rejected rather than silently ignored, and invalid input returns a `ParseError` whose byte offset is relative to the value text itself.
 time: 2026-06-15T20:31:54.049170681-07:00
