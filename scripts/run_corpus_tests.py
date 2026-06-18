@@ -343,9 +343,6 @@ def write_strict_tests(
     generated.parent.mkdir(parents=True, exist_ok=True)
     with generated.open("w", encoding="utf-8") as out:
         write_gleam_prelude(out)
-        out.write("fn strict_1_0_options() -> tomlet.Options {\n")
-        out.write("  tomlet.with_version(tomlet.default_options(), tomlet.Toml10)\n")
-        out.write("}\n\n")
         for rel_path in accept:
             rel = rel_path.with_suffix("").relative_to("valid").as_posix()
             data = read_text_preserving_newlines(repo / "tests" / rel_path)
@@ -353,7 +350,7 @@ def write_strict_tests(
             out.write(f"  let input = from_codepoints({gleam_codepoints(data)})\n")
             out.write(
                 "  let assert Ok(_) = "
-                "tomlet.parse_with(input, strict_1_0_options())\n"
+                "tomlet.parse_with(input, tomlet.Toml10)\n"
             )
             out.write("}\n\n")
         for rel_path in reject:
@@ -363,7 +360,7 @@ def write_strict_tests(
             out.write(f"  let input = from_codepoints({gleam_codepoints(data)})\n")
             out.write(
                 "  let assert Error(_) = "
-                "tomlet.parse_with(input, strict_1_0_options())\n"
+                "tomlet.parse_with(input, tomlet.Toml10)\n"
             )
             out.write("}\n\n")
 
