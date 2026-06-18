@@ -57,6 +57,13 @@ The supported public API is the top-level `tomlet` module. The modules listed in
 - `tomlet/ast`
 - `tomlet/parser`
 - `tomlet/path`
+- `tomlet/lexer`
+
+`tomlet/parser` is token-driven: `tomlet/lexer` wraps the `william` TOML lexer to
+produce byte-offset-annotated tokens, and the parser assembles the AST from that
+token stream while reusing the source-preserving value validators. TOML 1.1
+features are gated by an internal `parser.Version`, threaded from the public
+`tomlet.TomlVersion`.
 
 Avoid documenting, depending on, or expanding internal modules as public API
 unless the release intentionally changes that boundary.

@@ -60,7 +60,7 @@ type AssemblyState {
 
 fn assemble(
   spans: List(lexer.Spanned),
-  _version: Version,
+  version: Version,
 ) -> Result(ast.Table, ParseError) {
   assemble_loop(
     spans,
@@ -73,6 +73,7 @@ fn assemble(
       dotted_tables: [],
     ),
     [],
+    version,
   )
 }
 
@@ -80,6 +81,7 @@ fn assemble_loop(
   spans: List(lexer.Spanned),
   state: AssemblyState,
   entries: List(ast.Entry),
+  version: Version,
 ) -> Result(ast.Table, ParseError) {
   let #(leading_ws, rest) = take_whitespace(spans, "")
   case rest {
@@ -94,25 +96,40 @@ fn assemble_loop(
             header: None,
           ))
       }
-
     [lexer.Spanned(william.EndOfLine(_), _), ..tail] ->
-      assemble_loop(tail, state, [ast.BlankLine, ..entries])
+      assemble_loop(tail, state, [ast.BlankLine, ..entries], version)
 
     [lexer.Spanned(william.Comment(text), _), ..tail] ->
-      assemble_loop(drop_one_eol(tail), state, [
-        ast.Comment(leading_ws <> text),
-        ..entries
-      ])
+      assemble_loop(
+        drop_one_eol(tail),
+        state,
+        [ast.Comment(leading_ws <> text), ..entries],
+        version,
+      )
 
     [lexer.Spanned(william.OpenTable, offset), ..tail] ->
-      parse_header_tokens(tail, ast.StandardTable, offset, state, entries)
+      parse_header_tokens(
+        tail,
+        ast.StandardTable,
+        offset,
+        state,
+        entries,
+        version,
+      )
 
     [lexer.Spanned(william.OpenArrayTable, offset), ..tail] ->
-      parse_header_tokens(tail, ast.ArrayOfTablesHeader, offset, state, entries)
+      parse_header_tokens(
+        tail,
+        ast.ArrayOfTablesHeader,
+        offset,
+        state,
+        entries,
+        version,
+      )
 
     [lexer.Spanned(william.BareKey(_), offset), ..]
     | [lexer.Spanned(william.String(_, _), offset), ..] ->
-      parse_key_value_tokens(rest, offset, state, entries)
+      parse_key_value_tokens(rest, offset, state, entries, version)
 
     [lexer.Spanned(token, offset), ..] ->
       Error(Unexpected(token_src(token), ExpectedSyntax, offset))
@@ -148,17 +165,18 @@ fn collect_segments(
   spans: List(lexer.Spanned),
   expect_segment: Bool,
   acc: List(ast.KeySegment),
+  version: Version,
 ) -> Result(#(List(ast.KeySegment), List(lexer.Spanned)), ParseError) {
   let #(_ws, spans) = take_whitespace(spans, "")
   case spans {
     [lexer.Spanned(william.BareKey(name), _), ..rest] if expect_segment ->
-      collect_segments(rest, False, [ast.BareKeySegment(name), ..acc])
+      collect_segments(rest, False, [ast.BareKeySegment(name), ..acc], version)
 
     [lexer.Spanned(william.String(delimiter, value), offset), ..rest]
       if expect_segment
     ->
-      case key_segment_from_string(delimiter, value) {
-        Ok(segment) -> collect_segments(rest, False, [segment, ..acc])
+      case key_segment_from_string(delimiter, value, version) {
+        Ok(segment) -> collect_segments(rest, False, [segment, ..acc], version)
         Error(Nil) ->
           Error(Unexpected(
             token_src(william.String(delimiter, value)),
@@ -168,7 +186,7 @@ fn collect_segments(
       }
 
     [lexer.Spanned(william.Dot, _), ..rest] if !expect_segment ->
-      collect_segments(rest, True, acc)
+      collect_segments(rest, True, acc, version)
 
     _ ->
       case expect_segment {
@@ -186,10 +204,11 @@ fn collect_segments(
 fn key_segment_from_string(
   delimiter: william.StringDelimiter,
   value: String,
+  version: Version,
 ) -> Result(ast.KeySegment, Nil) {
   case delimiter {
     william.BasicString ->
-      case basic_string_content_is_valid(value) {
+      case basic_string_content_is_valid(value, version) {
         True ->
           Ok(ast.QuotedKeySegment(basic_key_value(value), "\"" <> value <> "\""))
         False -> Error(Nil)
@@ -206,14 +225,21 @@ fn parse_key_value_tokens(
   key_offset: Int,
   state: AssemblyState,
   entries: List(ast.Entry),
+  version: Version,
 ) -> Result(ast.Table, ParseError) {
-  use #(segments, after_key) <- result.try(collect_segments(spans, True, []))
+  use #(segments, after_key) <- result.try(collect_segments(
+    spans,
+    True,
+    [],
+    version,
+  ))
   case after_key {
     [lexer.Spanned(william.Equal, equal_offset), ..after_equal] -> {
       let key = ast.Key(segments)
       use #(value, trailing, rest) <- result.try(parse_value_tokens(
         after_equal,
         equal_offset,
+        version,
       ))
       let entry =
         ast.KeyValue(
@@ -223,7 +249,7 @@ fn parse_key_value_tokens(
           trailing: ast.Trivia(trailing <> "\n"),
         )
       use next_state <- result.try(apply_key_value_state(state, key, key_offset))
-      assemble_loop(rest, next_state, [entry, ..entries])
+      assemble_loop(rest, next_state, [entry, ..entries], version)
     }
     [lexer.Spanned(token, offset), ..] ->
       Error(Unexpected(token_src(token), ExpectedSyntax, offset))
@@ -238,30 +264,31 @@ fn parse_key_value_tokens(
 fn parse_value_tokens(
   spans: List(lexer.Spanned),
   equal_offset: Int,
+  version: Version,
 ) -> Result(#(ast.Value, String, List(lexer.Spanned)), ParseError) {
   let #(_ws, spans) = take_whitespace(spans, "")
   case spans {
     [lexer.Spanned(william.OpenBracket, offset), ..] -> {
       let #(span, rest) = balanced_span(spans, 0, [])
-      finish_value(span, offset, rest)
+      finish_value(span, offset, rest, version)
     }
     [lexer.Spanned(william.OpenBrace, offset), ..] -> {
       let #(span, rest) = balanced_span(spans, 0, [])
-      finish_value(span, offset, rest)
+      finish_value(span, offset, rest, version)
     }
     // No value before the line ends: report the missing value with the offset
     // of whatever follows the `=`.
     [lexer.Spanned(william.EndOfLine(_), offset), ..]
     | [lexer.Spanned(william.Comment(_), offset), ..] -> {
-      use value <- result.map(parse_value("", offset))
+      use value <- result.map(parse_value("", offset, version))
       #(value, "", spans)
     }
     [] -> {
-      use value <- result.map(parse_value("", equal_offset + 1))
+      use value <- result.map(parse_value("", equal_offset + 1, version))
       #(value, "", [])
     }
     [lexer.Spanned(token, offset), ..rest] -> {
-      use value <- result.try(parse_value(token_src(token), offset))
+      use value <- result.try(parse_value(token_src(token), offset, version))
       use #(trailing, after) <- result.map(scan_trailing(rest, ""))
       #(value, trailing, after)
     }
@@ -272,9 +299,10 @@ fn finish_value(
   span: List(lexer.Spanned),
   offset: Int,
   rest: List(lexer.Spanned),
+  version: Version,
 ) -> Result(#(ast.Value, String, List(lexer.Spanned)), ParseError) {
   let source = spans_source(span)
-  use value <- result.try(parse_value(source, offset))
+  use value <- result.try(parse_value(source, offset, version))
   use #(trailing, after) <- result.map(scan_trailing(rest, ""))
   #(value, trailing, after)
 }
@@ -339,8 +367,14 @@ fn parse_header_tokens(
   open_offset: Int,
   state: AssemblyState,
   entries: List(ast.Entry),
+  version: Version,
 ) -> Result(ast.Table, ParseError) {
-  use #(segments, after_key) <- result.try(collect_segments(spans, True, []))
+  use #(segments, after_key) <- result.try(collect_segments(
+    spans,
+    True,
+    [],
+    version,
+  ))
   let closer = case kind {
     ast.StandardTable -> after_key_is_close_table(after_key)
     ast.ArrayOfTablesHeader -> after_key_is_close_array_table(after_key)
@@ -355,7 +389,7 @@ fn parse_header_tokens(
         header,
         open_offset,
       ))
-      assemble_loop(rest, next_state, [entry, ..entries])
+      assemble_loop(rest, next_state, [entry, ..entries], version)
     }
     Error(Nil) -> Error(Unexpected("", ExpectedTableHeader, open_offset))
   }
@@ -517,9 +551,9 @@ fn first_disallowed_control_offset_loop(
   }
 }
 
-fn parse_key(text: String) -> Result(ast.Key, Nil) {
+fn parse_key(text: String, version: Version) -> Result(ast.Key, Nil) {
   split_key_segments_text(text)
-  |> list.try_map(parse_key_segment)
+  |> list.try_map(fn(segment) { parse_key_segment(segment, version) })
   |> result.map(ast.Key)
 }
 
@@ -712,7 +746,10 @@ fn bool_pick(condition: Bool, yes: String, no: String) -> String {
   no
 }
 
-fn parse_key_segment(segment: String) -> Result(ast.KeySegment, Nil) {
+fn parse_key_segment(
+  segment: String,
+  version: Version,
+) -> Result(ast.KeySegment, Nil) {
   let trimmed = string.trim(segment)
   use <- bool.guard(when: trimmed == "", return: Error(Nil))
   use <- bool.guard(
@@ -729,7 +766,7 @@ fn parse_key_segment(segment: String) -> Result(ast.KeySegment, Nil) {
         trimmed
         |> string.drop_start(1)
         |> string.drop_end(1)
-      case basic_string_content_is_valid(inner) {
+      case basic_string_content_is_valid(inner, version) {
         True -> Ok(ast.QuotedKeySegment(basic_key_value(inner), trimmed))
         False -> Error(Nil)
       }
@@ -911,13 +948,17 @@ fn add_paths(
   }
 }
 
-fn parse_value(text: String, offset: Int) -> Result(ast.Value, ParseError) {
+fn parse_value(
+  text: String,
+  offset: Int,
+  version: Version,
+) -> Result(ast.Value, ParseError) {
   case string.starts_with(text, "[") {
-    True -> parse_array_value(text, offset)
+    True -> parse_array_value(text, offset, version)
     False ->
       case string.starts_with(text, "{") {
-        True -> parse_inline_table_value(text, offset)
-        False -> parse_scalar_value(text, offset)
+        True -> parse_inline_table_value(text, offset, version)
+        False -> parse_scalar_value(text, offset, version)
       }
   }
 }
@@ -925,15 +966,16 @@ fn parse_value(text: String, offset: Int) -> Result(ast.Value, ParseError) {
 fn parse_scalar_value(
   text: String,
   offset: Int,
+  version: Version,
 ) -> Result(ast.Value, ParseError) {
   let parsers = [
-    parse_multiline_basic_string,
+    fn(text) { parse_multiline_basic_string(text, version) },
     parse_multiline_literal_string,
-    parse_basic_string,
+    fn(text) { parse_basic_string(text, version) },
     parse_literal_string,
     parse_bool_value,
     parse_float_value,
-    parse_date_like_value,
+    fn(text) { parse_date_like_value(text, version) },
   ]
   case list.find_map(parsers, fn(parse) { parse(text) }) {
     Ok(value) -> Ok(value)
@@ -945,8 +987,7 @@ fn split_top_level_commas(text: String) -> List(#(String, Int)) {
   split_top_level_commas_loop(
     string.to_graphemes(text),
     0,
-    False,
-    False,
+    StripNormal,
     "",
     0,
     [],
@@ -956,131 +997,82 @@ fn split_top_level_commas(text: String) -> List(#(String, Int)) {
 fn split_top_level_commas_loop(
   chars: List(String),
   depth: Int,
-  in_basic: Bool,
-  in_literal: Bool,
+  state: StripState,
   current: String,
   current_start: Int,
   parts: List(#(String, Int)),
 ) -> List(#(String, Int)) {
-  case chars {
-    [] ->
+  case state, chars {
+    _, [] ->
       list.reverse([
         #(string.trim(current), current_start + trim_start_byte_offset(current)),
         ..parts
       ])
-    [char, ..rest] ->
-      case char, depth, in_basic, in_literal {
-        "\\", _, True, False -> {
-          case rest {
-            [] ->
-              split_top_level_commas_loop(
-                rest,
-                depth,
-                in_basic,
-                in_literal,
-                current <> char,
-                current_start,
-                parts,
-              )
-            [escaped, ..after_escape] ->
-              split_top_level_commas_loop(
-                after_escape,
-                depth,
-                in_basic,
-                in_literal,
-                current <> "\\" <> escaped,
-                current_start,
-                parts,
-              )
-          }
-        }
-        ",", 0, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-            "",
-            current_start + string.byte_size(current) + 1,
-            [
-              #(
-                string.trim(current),
-                current_start + trim_start_byte_offset(current),
-              ),
-              ..parts
-            ],
-          )
-        "\"", _, _, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            !in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "'", _, False, _ ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            !in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "[", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth + 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "{", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth + 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "]", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth - 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        "}", _, False, False ->
-          split_top_level_commas_loop(
-            rest,
-            depth - 1,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-        _, _, _, _ ->
-          split_top_level_commas_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-            current <> char,
-            current_start,
-            parts,
-          )
-      }
+
+    StripNormal, [",", ..rest] if depth == 0 ->
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        "",
+        current_start + string.byte_size(current) + 1,
+        [
+          #(
+            string.trim(current),
+            current_start + trim_start_byte_offset(current),
+          ),
+          ..parts
+        ],
+      )
+    StripNormal, ["[", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth + 1,
+        StripNormal,
+        current <> "[",
+        current_start,
+        parts,
+      )
+    StripNormal, ["{", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth + 1,
+        StripNormal,
+        current <> "{",
+        current_start,
+        parts,
+      )
+    StripNormal, ["]", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth - 1,
+        StripNormal,
+        current <> "]",
+        current_start,
+        parts,
+      )
+    StripNormal, ["}", ..rest] ->
+      split_top_level_commas_loop(
+        rest,
+        depth - 1,
+        StripNormal,
+        current <> "}",
+        current_start,
+        parts,
+      )
+
+    _, _ -> {
+      let StripStep(rest, next_state, consumed) =
+        strip_state_step(chars, state, False)
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        next_state,
+        current <> consumed,
+        current_start,
+        parts,
+      )
+    }
   }
 }
 
@@ -1091,6 +1083,7 @@ fn trim_start_byte_offset(text: String) -> Int {
 fn parse_array_value(
   text: String,
   offset: Int,
+  version: Version,
 ) -> Result(ast.Value, ParseError) {
   let is_array = string.starts_with(text, "[") && string.ends_with(text, "]")
   use <- bool.guard(
@@ -1106,7 +1099,13 @@ fn parse_array_value(
   case string.trim(clean_body) {
     "" -> Ok(ast.Array([], text))
     _ ->
-      case parse_array_items(split_top_level_commas(clean_body), offset + 1) {
+      case
+        parse_array_items(
+          split_top_level_commas(clean_body),
+          offset + 1,
+          version,
+        )
+      {
         Ok(items) -> Ok(ast.Array(items, text))
         Error(error) -> Error(error)
       }
@@ -1116,6 +1115,7 @@ fn parse_array_value(
 fn parse_array_items(
   parts: List(#(String, Int)),
   body_offset: Int,
+  version: Version,
 ) -> Result(List(ast.ArrayItem), ParseError) {
   case parts {
     [] -> Ok([])
@@ -1127,9 +1127,9 @@ fn parse_array_items(
             _ -> Error(Unexpected("", ExpectedValue, body_offset + part_offset))
           }
         clean_part ->
-          case parse_value(clean_part, body_offset + part_offset) {
+          case parse_value(clean_part, body_offset + part_offset, version) {
             Ok(value) ->
-              case parse_array_items(rest, body_offset) {
+              case parse_array_items(rest, body_offset, version) {
                 Ok(items) ->
                   Ok([
                     ast.ArrayItem(ast.Trivia(""), value, ast.Trivia("")),
@@ -1146,6 +1146,7 @@ fn parse_array_items(
 fn parse_inline_table_value(
   text: String,
   offset: Int,
+  version: Version,
 ) -> Result(ast.Value, ParseError) {
   let is_inline_table =
     string.starts_with(text, "{") && string.ends_with(text, "}")
@@ -1160,14 +1161,19 @@ fn parse_inline_table_value(
   let clean_body = strip_inline_comments_by_line(body)
 
   use <- bool.guard(
-    when: !inline_table_newlines_are_valid(body),
+    when: !inline_table_newlines_are_valid(body, version),
     return: Error(Unexpected(text, ExpectedSyntax, offset)),
   )
   case string.trim(clean_body) {
     "" -> Ok(ast.InlineTable([], text))
     _ ->
       case
-        parse_inline_entries(split_top_level_commas(clean_body), offset + 1, [])
+        parse_inline_entries(
+          split_top_level_commas(clean_body),
+          offset + 1,
+          [],
+          version,
+        )
       {
         Ok(entries) -> Ok(ast.InlineTable(entries, text))
         Error(error) -> Error(error)
@@ -1175,70 +1181,44 @@ fn parse_inline_table_value(
   }
 }
 
-fn inline_table_newlines_are_valid(text: String) -> Bool {
-  inline_table_newlines_are_valid_loop(
-    string.to_graphemes(text),
-    0,
-    False,
-    False,
-  )
+fn inline_table_newlines_are_valid(text: String, version: Version) -> Bool {
+  case version {
+    Toml11 -> True
+    Toml10 ->
+      inline_table_newlines_are_valid_loop(
+        string.to_graphemes(text),
+        0,
+        StripNormal,
+      )
+  }
 }
 
 fn inline_table_newlines_are_valid_loop(
   chars: List(String),
   depth: Int,
-  in_basic: Bool,
-  in_literal: Bool,
+  state: StripState,
 ) -> Bool {
-  case chars {
-    [] -> True
-    ["\\", _, ..rest] if in_basic ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, in_literal)
-    ["\n", ..rest] ->
-      case depth > 0 || in_basic || in_literal {
-        True ->
-          inline_table_newlines_are_valid_loop(
-            rest,
-            depth,
-            in_basic,
-            in_literal,
-          )
+  case state, chars {
+    _, [] -> True
+
+    StripNormal, ["\n", ..rest] ->
+      case depth > 0 {
+        True -> inline_table_newlines_are_valid_loop(rest, depth, StripNormal)
         False -> False
       }
-    ["\"", ..rest] if !in_literal ->
-      inline_table_newlines_are_valid_loop(rest, depth, !in_basic, in_literal)
-    ["'", ..rest] if !in_basic ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, !in_literal)
-    ["[", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth + 1,
-        in_basic,
-        in_literal,
-      )
-    ["{", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth + 1,
-        in_basic,
-        in_literal,
-      )
-    ["]", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth - 1,
-        in_basic,
-        in_literal,
-      )
-    ["}", ..rest] if !in_basic && !in_literal ->
-      inline_table_newlines_are_valid_loop(
-        rest,
-        depth - 1,
-        in_basic,
-        in_literal,
-      )
-    [_, ..rest] ->
-      inline_table_newlines_are_valid_loop(rest, depth, in_basic, in_literal)
+    StripNormal, ["[", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth + 1, StripNormal)
+    StripNormal, ["{", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth + 1, StripNormal)
+    StripNormal, ["]", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
+    StripNormal, ["}", ..rest] ->
+      inline_table_newlines_are_valid_loop(rest, depth - 1, StripNormal)
+
+    _, _ -> {
+      let StripStep(rest, next_state, _) = strip_state_step(chars, state, False)
+      inline_table_newlines_are_valid_loop(rest, depth, next_state)
+    }
   }
 }
 
@@ -1246,108 +1226,149 @@ fn parse_inline_entries(
   parts: List(#(String, Int)),
   body_offset: Int,
   seen: List(List(String)),
+  version: Version,
 ) -> Result(List(ast.InlineTableEntry), ParseError) {
   case parts {
     [] -> Ok([])
     [#(part, part_offset), ..rest] -> {
       let entry_offset = body_offset + part_offset
-      use <- bool.guard(
-        when: string.trim(part) == "",
-        return: Error(Unexpected("", ExpectedSyntax, entry_offset)),
-      )
-      use #(raw_key, raw_value) <- result.try(result.replace_error(
-        split_key_value(part),
-        Unexpected(part, ExpectedSyntax, entry_offset),
-      ))
-      use key <- result.try(result.replace_error(
-        parse_key(string.trim(raw_key)),
-        Unexpected(part, ExpectedKey, entry_offset),
-      ))
-      let key_path = key_utils.to_strings(key)
-      use <- bool.guard(
-        when: key_path_conflicts(seen, key_path),
-        return: Error(Unexpected(part, ExpectedSyntax, entry_offset)),
-      )
-      use value <- result.try(parse_value(
-        string.trim(strip_inline_comments_by_line(raw_value)),
-        entry_offset
-          + string.byte_size(raw_key)
-          + 1
-          + trim_start_byte_offset(raw_value),
-      ))
-      use entries <- result.try(
-        parse_inline_entries(rest, body_offset, [key_path, ..seen]),
-      )
-      Ok([
-        ast.InlineTableEntry(ast.Trivia(""), key, value, ast.Trivia("")),
-        ..entries
-      ])
+      // A whitespace-only segment is normally invalid. In TOML 1.1 a single
+      // trailing comma before `}` produces an empty final segment, which is
+      // permitted; in 1.0 it remains an error. Comments were already stripped
+      // from the body before splitting, so a plain trim identifies it.
+      case string.trim(part) {
+        "" ->
+          case version, rest {
+            Toml11, [] -> Ok([])
+            _, _ -> Error(Unexpected("", ExpectedSyntax, entry_offset))
+          }
+        _ -> {
+          use #(raw_key, raw_value) <- result.try(result.replace_error(
+            split_key_value(part),
+            Unexpected(part, ExpectedSyntax, entry_offset),
+          ))
+          use key <- result.try(result.replace_error(
+            parse_key(string.trim(raw_key), version),
+            Unexpected(part, ExpectedKey, entry_offset),
+          ))
+          let key_path = key_utils.to_strings(key)
+          use <- bool.guard(
+            when: key_path_conflicts(seen, key_path),
+            return: Error(Unexpected(part, ExpectedSyntax, entry_offset)),
+          )
+          use value <- result.try(parse_value(
+            string.trim(strip_inline_comments_by_line(raw_value)),
+            entry_offset
+              + string.byte_size(raw_key)
+              + 1
+              + trim_start_byte_offset(raw_value),
+            version,
+          ))
+          use entries <- result.try(parse_inline_entries(
+            rest,
+            body_offset,
+            [key_path, ..seen],
+            version,
+          ))
+          Ok([
+            ast.InlineTableEntry(ast.Trivia(""), key, value, ast.Trivia("")),
+            ..entries
+          ])
+        }
+      }
     }
   }
 }
 
-fn strip_inline_comment(text: String) -> String {
-  strip_inline_comment_loop(string.to_graphemes(text), False, False, "")
-}
-
+// Strips `#` comments from an inline-table or array body while preserving every
+// string literal verbatim. A single pass tracks single-line basic (`"`) and
+// literal (`'`) strings as well as multi-line basic (`"""`) and literal (`'''`)
+// strings, so comments that follow a closing multi-line delimiter on a later
+// physical line are removed correctly. Newlines are preserved so byte offsets in
+// downstream errors stay accurate.
 fn strip_inline_comments_by_line(text: String) -> String {
-  text
-  |> string.split("\n")
-  |> list.map(strip_inline_comment)
-  |> string.join(with: "\n")
+  strip_inline_comments_loop(string.to_graphemes(text), StripNormal, "")
 }
 
-fn strip_inline_comment_loop(
+type StripState {
+  StripNormal
+  StripBasic
+  StripLiteral
+  StripMultiBasic
+  StripMultiLiteral
+}
+
+type StripStep {
+  StripStep(rest: List(String), state: StripState, consumed: String)
+}
+
+fn strip_state_step(
   chars: List(String),
-  in_basic: Bool,
-  in_literal: Bool,
-  acc: String,
-) -> String {
-  case chars {
-    [] -> acc
-    ["\\", escaped, ..rest] ->
-      case in_basic {
-        True ->
-          strip_inline_comment_loop(
-            rest,
-            in_basic,
-            in_literal,
-            acc <> "\\" <> escaped,
-          )
-        False ->
-          strip_inline_comment_loop(
-            [escaped, ..rest],
-            in_basic,
-            in_literal,
-            acc <> "\\",
-          )
-      }
-    ["#", ..rest] ->
-      case in_basic || in_literal {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "#")
-        False -> acc
-      }
-    ["\"", ..rest] ->
-      case in_literal {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "\"")
-        False ->
-          strip_inline_comment_loop(rest, !in_basic, in_literal, acc <> "\"")
-      }
-    ["'", ..rest] ->
-      case in_basic {
-        True ->
-          strip_inline_comment_loop(rest, in_basic, in_literal, acc <> "'")
-        False ->
-          strip_inline_comment_loop(rest, in_basic, !in_literal, acc <> "'")
-      }
-    [char, ..rest] ->
-      strip_inline_comment_loop(rest, in_basic, in_literal, acc <> char)
+  state: StripState,
+  close_single_line_on_newline: Bool,
+) -> StripStep {
+  case state, chars {
+    _, [] -> StripStep([], state, "")
+
+    StripNormal, ["\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripMultiBasic, "\"\"\"")
+    StripNormal, ["'", "'", "'", ..rest] ->
+      StripStep(rest, StripMultiLiteral, "'''")
+    StripNormal, ["\"", ..rest] -> StripStep(rest, StripBasic, "\"")
+    StripNormal, ["'", ..rest] -> StripStep(rest, StripLiteral, "'")
+    StripNormal, [char, ..rest] -> StripStep(rest, StripNormal, char)
+
+    StripBasic, ["\\", escaped, ..rest] ->
+      StripStep(rest, StripBasic, "\\" <> escaped)
+    StripBasic, ["\"", ..rest] -> StripStep(rest, StripNormal, "\"")
+    StripBasic, ["\n", ..rest] if close_single_line_on_newline ->
+      StripStep(rest, StripNormal, "\n")
+    StripBasic, [char, ..rest] -> StripStep(rest, StripBasic, char)
+
+    StripLiteral, ["'", ..rest] -> StripStep(rest, StripNormal, "'")
+    StripLiteral, ["\n", ..rest] if close_single_line_on_newline ->
+      StripStep(rest, StripNormal, "\n")
+    StripLiteral, [char, ..rest] -> StripStep(rest, StripLiteral, char)
+
+    StripMultiBasic, ["\\", escaped, ..rest] ->
+      StripStep(rest, StripMultiBasic, "\\" <> escaped)
+    StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripNormal, "\"\"\"")
+    StripMultiBasic, [char, ..rest] -> StripStep(rest, StripMultiBasic, char)
+
+    StripMultiLiteral, ["'", "'", "'", ..rest] ->
+      StripStep(rest, StripNormal, "'''")
+    StripMultiLiteral, [char, ..rest] ->
+      StripStep(rest, StripMultiLiteral, char)
   }
 }
 
-fn parse_multiline_basic_string(text: String) -> Result(ast.Value, Nil) {
+fn strip_inline_comments_loop(
+  chars: List(String),
+  state: StripState,
+  acc: String,
+) -> String {
+  case state, chars {
+    _, [] -> acc
+
+    StripNormal, ["#", ..rest] ->
+      strip_inline_comments_loop(
+        list.drop_while(rest, fn(char) { char != "\n" }),
+        StripNormal,
+        acc,
+      )
+    _, _ -> {
+      let StripStep(rest, next_state, consumed) =
+        strip_state_step(chars, state, True)
+      strip_inline_comments_loop(rest, next_state, acc <> consumed)
+    }
+  }
+}
+
+fn parse_multiline_basic_string(
+  text: String,
+  version: Version,
+) -> Result(ast.Value, Nil) {
   let is_delimited =
     string.starts_with(text, "\"\"\"") && string.ends_with(text, "\"\"\"")
   use <- bool.guard(when: !is_delimited, return: Error(Nil))
@@ -1357,7 +1378,7 @@ fn parse_multiline_basic_string(text: String) -> Result(ast.Value, Nil) {
     |> string.drop_end(3)
 
   let content_valid =
-    text != "\"\"\"" && multiline_basic_string_content_is_valid(inner)
+    text != "\"\"\"" && multiline_basic_string_content_is_valid(inner, version)
   use <- bool.guard(when: !content_valid, return: Error(Nil))
   Ok(ast.String(inner, ast.MultiBasicString, text))
 }
@@ -1377,7 +1398,10 @@ fn parse_multiline_literal_string(text: String) -> Result(ast.Value, Nil) {
   Ok(ast.String(inner, ast.MultiLiteralString, text))
 }
 
-fn parse_basic_string(text: String) -> Result(ast.Value, Nil) {
+fn parse_basic_string(
+  text: String,
+  version: Version,
+) -> Result(ast.Value, Nil) {
   let is_delimited =
     string.starts_with(text, "\"") && string.ends_with(text, "\"")
   use <- bool.guard(when: !is_delimited, return: Error(Nil))
@@ -1387,7 +1411,7 @@ fn parse_basic_string(text: String) -> Result(ast.Value, Nil) {
     |> string.drop_end(1)
 
   use <- bool.guard(
-    when: !basic_string_content_is_valid(inner),
+    when: !basic_string_content_is_valid(inner, version),
     return: Error(Nil),
   )
   Ok(ast.String(inner, ast.BasicString, text))
@@ -1431,59 +1455,67 @@ fn string_is_multiline_delimited(text: String) -> Bool {
   || { string.starts_with(text, "'''") && string.ends_with(text, "'''") }
 }
 
-fn multiline_basic_string_content_is_valid(text: String) -> Bool {
-  multiline_basic_string_chars_are_valid(string.to_graphemes(text))
+fn multiline_basic_string_content_is_valid(
+  text: String,
+  version: Version,
+) -> Bool {
+  multiline_basic_string_chars_are_valid(string.to_graphemes(text), version)
 }
 
-fn multiline_basic_string_chars_are_valid(chars: List(String)) -> Bool {
+fn multiline_basic_string_chars_are_valid(
+  chars: List(String),
+  version: Version,
+) -> Bool {
   case chars {
     [] -> True
     ["\\"] -> False
-    ["\\", ..rest] -> multiline_basic_escape_is_valid(rest)
+    ["\\", ..rest] -> multiline_basic_escape_is_valid(rest, version)
     ["\"", "\"", "\"", ..] -> False
     [char, ..rest] ->
       case char_is_disallowed_control(char) {
         True -> False
-        False -> multiline_basic_string_chars_are_valid(rest)
+        False -> multiline_basic_string_chars_are_valid(rest, version)
       }
   }
 }
 
-fn multiline_basic_escape_is_valid(chars: List(String)) -> Bool {
+fn multiline_basic_escape_is_valid(
+  chars: List(String),
+  version: Version,
+) -> Bool {
+  let continue = fn(rest) {
+    multiline_basic_string_chars_are_valid(rest, version)
+  }
   case chars {
     [] -> False
-    ["\n", ..rest] -> multiline_basic_string_chars_are_valid(rest)
-    ["\r", "\n", ..rest] -> multiline_basic_string_chars_are_valid(rest)
-    [" ", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest)
-    ["\t", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest)
+    ["\n", ..rest] -> continue(rest)
+    ["\r", "\n", ..rest] -> continue(rest)
+    [" ", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
+    ["\t", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
+    ["e", ..rest] if version == Toml11 -> continue(rest)
+    ["x", ..rest] if version == Toml11 ->
+      hex_escape_is_valid_for(continue, rest)
     [escaped, ..rest] ->
       case escaped {
-        "b" | "t" | "n" | "f" | "r" | "\"" | "\\" ->
-          multiline_basic_string_chars_are_valid(rest)
-        "u" ->
-          unicode_escape_is_valid_for(
-            multiline_basic_string_chars_are_valid,
-            rest,
-            4,
-          )
-        "U" ->
-          unicode_escape_is_valid_for(
-            multiline_basic_string_chars_are_valid,
-            rest,
-            8,
-          )
+        "b" | "t" | "n" | "f" | "r" | "\"" | "\\" -> continue(rest)
+        "u" -> unicode_escape_is_valid_for(continue, rest, 4)
+        "U" -> unicode_escape_is_valid_for(continue, rest, 8)
         _ -> False
       }
   }
 }
 
-fn multiline_basic_line_ending_escape_is_valid(chars: List(String)) -> Bool {
+fn multiline_basic_line_ending_escape_is_valid(
+  chars: List(String),
+  version: Version,
+) -> Bool {
   case chars {
     [] -> False
-    [" ", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest)
-    ["\t", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest)
-    ["\n", ..rest] -> multiline_basic_string_chars_are_valid(rest)
-    ["\r", "\n", ..rest] -> multiline_basic_string_chars_are_valid(rest)
+    [" ", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
+    ["\t", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
+    ["\n", ..rest] -> multiline_basic_string_chars_are_valid(rest, version)
+    ["\r", "\n", ..rest] ->
+      multiline_basic_string_chars_are_valid(rest, version)
     _ -> False
   }
 }
@@ -1605,12 +1637,18 @@ fn parse_signed_exponent(text: String) -> Result(Int, Nil) {
   int.parse(without_plus)
 }
 
-fn parse_date_like_value(text: String) -> Result(ast.Value, Nil) {
+fn parse_date_like_value(
+  text: String,
+  version: Version,
+) -> Result(ast.Value, Nil) {
   use <- bool.guard(
-    when: datetime_repr_is_valid(text),
+    when: datetime_repr_is_valid_versioned(text, version),
     return: Ok(ast.DateTime(text)),
   )
-  use <- bool.guard(when: time_repr_is_valid(text), return: Ok(ast.Time(text)))
+  use <- bool.guard(
+    when: time_repr_is_valid_versioned(text, version),
+    return: Ok(ast.Time(text)),
+  )
   use <- bool.guard(when: date_repr_is_valid(text), return: Ok(ast.Date(text)))
   Error(Nil)
 }
@@ -1712,20 +1750,27 @@ fn based_digit_value(char: String) -> Result(Int, Nil) {
   }
 }
 
-fn basic_string_content_is_valid(text: String) -> Bool {
-  basic_string_chars_are_valid(string.to_graphemes(text))
+fn basic_string_content_is_valid(text: String, version: Version) -> Bool {
+  basic_string_chars_are_valid(string.to_graphemes(text), version)
 }
 
-fn basic_string_chars_are_valid(chars: List(String)) -> Bool {
+fn basic_string_chars_are_valid(chars: List(String), version: Version) -> Bool {
   case chars {
     [] -> True
     ["\\"] -> False
+    ["\\", "e", ..rest] if version == Toml11 ->
+      basic_string_chars_are_valid(rest, version)
+    ["\\", "x", ..rest] if version == Toml11 ->
+      hex_escape_is_valid_for(
+        fn(remaining) { basic_string_chars_are_valid(remaining, version) },
+        rest,
+      )
     ["\\", escaped, ..rest] ->
       case escaped {
         "b" | "t" | "n" | "f" | "r" | "\"" | "\\" ->
-          basic_string_chars_are_valid(rest)
-        "u" -> unicode_escape_is_valid(rest, 4)
-        "U" -> unicode_escape_is_valid(rest, 8)
+          basic_string_chars_are_valid(rest, version)
+        "u" -> unicode_escape_is_valid(rest, 4, version)
+        "U" -> unicode_escape_is_valid(rest, 8, version)
         _ -> False
       }
     ["\n", ..] -> False
@@ -1733,13 +1778,38 @@ fn basic_string_chars_are_valid(chars: List(String)) -> Bool {
     [char, ..rest] ->
       case char_is_disallowed_control(char) {
         True -> False
-        False -> basic_string_chars_are_valid(rest)
+        False -> basic_string_chars_are_valid(rest, version)
       }
   }
 }
 
-fn unicode_escape_is_valid(chars: List(String), count: Int) -> Bool {
-  unicode_escape_is_valid_for(basic_string_chars_are_valid, chars, count)
+// A `\xHH` escape (TOML 1.1) requires exactly two hex digits; the resulting
+// value is at most 0xFF, which is always a valid scalar, so no further range
+// check is needed.
+fn hex_escape_is_valid_for(
+  validate_remaining: fn(List(String)) -> Bool,
+  chars: List(String),
+) -> Bool {
+  case chars {
+    [high, low, ..rest] ->
+      case is_hex_digit_string(high) && is_hex_digit_string(low) {
+        True -> validate_remaining(rest)
+        False -> False
+      }
+    _ -> False
+  }
+}
+
+fn unicode_escape_is_valid(
+  chars: List(String),
+  count: Int,
+  version: Version,
+) -> Bool {
+  unicode_escape_is_valid_for(
+    fn(remaining) { basic_string_chars_are_valid(remaining, version) },
+    chars,
+    count,
+  )
 }
 
 fn unicode_escape_is_valid_for(
@@ -1900,21 +1970,24 @@ pub fn date_repr_is_valid(text: String) -> Bool {
   date_parts_are_valid(text)
 }
 
-pub fn datetime_repr_is_valid(text: String) -> Bool {
+// Split a datetime into its date and time-offset halves on any of the three
+// permitted separators (`T`, `t`, or a space).
+fn split_datetime(text: String) -> Result(#(String, String), Nil) {
   case string.split_once(text, "T") {
-    Ok(#(date, time_offset)) ->
-      date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
+    Ok(parts) -> Ok(parts)
     Error(Nil) ->
       case string.split_once(text, "t") {
-        Ok(#(date, time_offset)) ->
-          date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
-        Error(Nil) ->
-          case string.split_once(text, " ") {
-            Ok(#(date, time_offset)) ->
-              date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
-            Error(Nil) -> False
-          }
+        Ok(parts) -> Ok(parts)
+        Error(Nil) -> string.split_once(text, " ")
       }
+  }
+}
+
+pub fn datetime_repr_is_valid(text: String) -> Bool {
+  case split_datetime(text) {
+    Ok(#(date, time_offset)) ->
+      date_repr_is_valid(date) && time_offset_repr_is_valid(time_offset)
+    Error(Nil) -> False
   }
 }
 
@@ -1928,6 +2001,50 @@ fn time_offset_repr_is_valid(text: String) -> Bool {
         Error(Nil) -> time_repr_is_valid(text)
       }
   }
+}
+
+// Version-aware date-time / time validators. They reuse the strict 1.0 logic
+// but additionally accept the second-less `HH:MM` time shape under TOML 1.1.
+fn datetime_repr_is_valid_versioned(text: String, version: Version) -> Bool {
+  case version {
+    Toml10 -> datetime_repr_is_valid(text)
+    Toml11 ->
+      case split_datetime(text) {
+        Ok(#(date, time_offset)) ->
+          date_repr_is_valid(date)
+          && time_offset_repr_is_valid_versioned(time_offset, version)
+        Error(Nil) -> False
+      }
+  }
+}
+
+fn time_offset_repr_is_valid_versioned(text: String, version: Version) -> Bool {
+  case string.ends_with(text, "Z") || string.ends_with(text, "z") {
+    True -> time_repr_is_valid_versioned(string.drop_end(text, 1), version)
+    False ->
+      case find_offset_separator(string.to_graphemes(text), "") {
+        Ok(#(time, offset)) ->
+          time_repr_is_valid_versioned(time, version)
+          && offset_repr_is_valid(offset)
+        Error(Nil) -> time_repr_is_valid_versioned(text, version)
+      }
+  }
+}
+
+fn time_repr_is_valid_versioned(text: String, version: Version) -> Bool {
+  case version {
+    Toml10 -> time_repr_is_valid(text)
+    Toml11 -> time_repr_is_valid(text) || hour_minute_repr_is_valid(text)
+  }
+}
+
+// The second-less `HH:MM` time shape introduced in TOML 1.1. The fixed length of
+// 5 guarantees there is no trailing seconds or fractional component.
+fn hour_minute_repr_is_valid(text: String) -> Bool {
+  string.length(text) == 5
+  && string.slice(text, 2, 1) == ":"
+  && two_digits_in_range(string.slice(text, 0, 2), 0, 23)
+  && two_digits_in_range(string.slice(text, 3, 2), 0, 59)
 }
 
 fn find_offset_separator(
@@ -2124,6 +2241,14 @@ fn basic_key_value_loop(chars: List(String), acc: String) -> String {
         "r" -> basic_key_value_loop(rest, acc <> "\r")
         "\"" -> basic_key_value_loop(rest, acc <> "\"")
         "\\" -> basic_key_value_loop(rest, acc <> "\\")
+        "e" -> basic_key_value_loop(rest, acc <> "\u{001B}")
+        "x" -> {
+          let #(escape, remaining) = take_chars(rest, 2, "")
+          basic_key_value_loop(
+            remaining,
+            acc <> unicode_escape_to_string(escape),
+          )
+        }
         "u" -> {
           let #(escape, remaining) = take_chars(rest, 4, "")
           basic_key_value_loop(

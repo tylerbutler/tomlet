@@ -13,11 +13,34 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".toml-test"
 TOML_TEST_REPO = CACHE / "toml-test"
 
+MANIFEST_1_0 = "files-toml-1.0.0"
+MANIFEST_1_1 = "files-toml-1.1.0"
+
 VALID_GENERATED = ROOT / "test" / "tomlet" / "corpus_generated_test.gleam"
 INVALID_GENERATED = ROOT / "test" / "tomlet" / "invalid_corpus_generated_test.gleam"
+STRICT_GENERATED = ROOT / "test" / "tomlet" / "strict_1_0_generated_test.gleam"
 
-# Every valid TOML 1.0 corpus input must round-trip byte-for-byte.
+# Valid TOML 1.1 corpus inputs that parse correctly but do not round-trip
+# byte-for-byte. Each entry is a `valid/`-relative path (without the `.toml`
+# suffix) and must include a comment explaining the formatting difference.
 ROUNDTRIP_UNSUPPORTED = set()
+
+# Fixtures listed in the TOML 1.1 valid manifest but not the TOML 1.0 valid
+# manifest that use 1.1-only syntax. Strict TOML 1.0 mode must reject these;
+# the remaining 1.1-only manifest entries are spec example renames that strict
+# mode should still accept. Entries are `valid/`-relative paths without `.toml`.
+STRICT_1_0_REJECT_IN_1_1 = {
+    "datetime/no-seconds",
+    "inline-table/newline",
+    "inline-table/newline-comment",
+    "spec-1.1.0/common-12",
+    "spec-1.1.0/common-29",
+    "spec-1.1.0/common-31",
+    "spec-1.1.0/common-34",
+    "spec-1.1.0/common-47",
+    "string/escape-esc",
+    "string/hex-escape",
+}
 
 INVALID_BYTE_FIXTURES = {
     # These fixtures contain invalid UTF-8/UTF-16 bytes or misplaced UTF-8 BOM
@@ -44,7 +67,7 @@ def main() -> int:
     )
     parser.add_argument(
         "suite",
-        choices=["valid", "invalid", "all"],
+        choices=["valid", "invalid", "strict", "all"],
         nargs="?",
         default="all",
         help="Corpus suite to run.",
@@ -59,41 +82,79 @@ def main() -> int:
 
     targets = ["erlang", "javascript"] if args.target == "all" else [args.target]
 
+    # Run every requested suite even if an earlier one fails so the gate reports
+    # the full picture in a single invocation. A non-zero exit is returned if any
+    # suite failed on any target.
+    ok = True
     if args.suite in {"valid", "all"}:
-        run_valid(targets)
+        ok = run_valid(targets) and ok
     if args.suite in {"invalid", "all"}:
-        run_invalid(targets)
-    return 0
+        ok = run_invalid(targets) and ok
+    if args.suite in {"strict", "all"}:
+        ok = run_strict(targets) and ok
+    return 0 if ok else 1
 
 
-def run_valid(targets: list[str]) -> None:
+def run_valid(targets: list[str]) -> bool:
     repo = ensure_toml_test_repo()
-    files = load_toml_1_0_paths(repo, "valid")
+    files = load_paths(repo, "valid", MANIFEST_1_1)
     write_valid_tests(repo, files, VALID_GENERATED)
     try:
-        run_gleam_targets(targets)
+        ok = run_gleam_targets(targets)
     finally:
         VALID_GENERATED.unlink(missing_ok=True)
-    print(
-        "toml-test valid corpus parse/round-trip checks succeeded from "
-        f"{repo / 'tests' / 'valid'}"
-    )
+    if ok:
+        print(
+            "toml-test TOML 1.1 valid corpus parse/round-trip checks succeeded from "
+            f"{repo / 'tests' / 'valid'}"
+        )
+    else:
+        print("toml-test TOML 1.1 valid corpus checks FAILED")
+    return ok
 
 
-def run_invalid(targets: list[str]) -> None:
+def run_invalid(targets: list[str]) -> bool:
     repo = ensure_toml_test_repo()
-    files = load_toml_1_0_paths(repo, "invalid")
+    files = load_paths(repo, "invalid", MANIFEST_1_1)
     write_invalid_tests(repo, files, INVALID_GENERATED)
     try:
-        run_gleam_targets(targets)
+        ok = run_gleam_targets(targets)
     finally:
         INVALID_GENERATED.unlink(missing_ok=True)
-    print(f"toml-test invalid corpus checks succeeded from {repo / 'tests' / 'invalid'}")
+    if ok:
+        print(
+            "toml-test TOML 1.1 invalid corpus checks succeeded from "
+            f"{repo / 'tests' / 'invalid'}"
+        )
+    else:
+        print("toml-test TOML 1.1 invalid corpus checks FAILED")
+    return ok
+
+
+def run_strict(targets: list[str]) -> bool:
+    repo = ensure_toml_test_repo()
+    valid_1_0 = load_paths(repo, "valid", MANIFEST_1_0)
+    valid_1_1 = load_paths(repo, "valid", MANIFEST_1_1)
+    only_1_1 = sorted(set(valid_1_1) - set(valid_1_0))
+    write_strict_tests(repo, valid_1_0, only_1_1, STRICT_GENERATED)
+    try:
+        ok = run_gleam_targets(targets)
+    finally:
+        STRICT_GENERATED.unlink(missing_ok=True)
+    if ok:
+        print(
+            "toml-test strict TOML 1.0 accept/reject checks succeeded from "
+            f"{repo / 'tests' / 'valid'}"
+        )
+    else:
+        print("toml-test strict TOML 1.0 accept/reject checks FAILED")
+    return ok
 
 
 def ensure_toml_test_repo() -> Path:
-    expected_file_list = TOML_TEST_REPO / "tests" / "files-toml-1.0.0"
-    if TOML_TEST_REPO.is_dir() and expected_file_list.is_file():
+    expected_1_0 = TOML_TEST_REPO / "tests" / MANIFEST_1_0
+    expected_1_1 = TOML_TEST_REPO / "tests" / MANIFEST_1_1
+    if TOML_TEST_REPO.is_dir() and expected_1_0.is_file() and expected_1_1.is_file():
         return TOML_TEST_REPO
 
     if TOML_TEST_REPO.exists():
@@ -120,22 +181,22 @@ def ensure_toml_test_repo() -> Path:
             shutil.rmtree(TOML_TEST_REPO)
         raise
 
-    if not expected_file_list.is_file():
+    if not expected_1_0.is_file() or not expected_1_1.is_file():
         shutil.rmtree(TOML_TEST_REPO)
         raise SystemExit(
-            "toml-test checkout is missing tests/files-toml-1.0.0; "
+            f"toml-test checkout is missing {MANIFEST_1_0} or {MANIFEST_1_1}; "
             "remove .toml-test and rerun corpus tests"
         )
 
     return TOML_TEST_REPO
 
 
-def load_toml_1_0_paths(repo: Path, kind: str) -> list[Path]:
+def load_paths(repo: Path, kind: str, manifest_filename: str) -> list[Path]:
     prefix = f"{kind}/"
     files = []
-    file_list = repo / "tests" / "files-toml-1.0.0"
+    file_list = repo / "tests" / manifest_filename
     if not file_list.is_file():
-        raise SystemExit(f"missing TOML 1.0 corpus file list: {file_list}")
+        raise SystemExit(f"missing corpus file list: {file_list}")
     for raw in file_list.read_text(encoding="utf-8").splitlines():
         raw = raw.strip()
         if raw.startswith(prefix) and raw.endswith(".toml"):
@@ -171,7 +232,7 @@ def write_valid_tests(repo: Path, files: list[Path], generated: Path) -> None:
             out.write("}\n\n")
 
     print(
-        f"generated {len(files)} valid corpus tests at {generated} "
+        f"generated {len(files)} TOML 1.1 valid corpus tests at {generated} "
         f"({roundtrip_count} round-trip, {parse_only_count} parse-only)"
     )
 
@@ -201,9 +262,68 @@ def write_invalid_tests(repo: Path, files: list[Path], generated: Path) -> None:
             out.write("}\n\n")
 
     print(
-        f"generated {len(files)} invalid corpus tests at {generated} "
+        f"generated {len(files)} TOML 1.1 invalid corpus tests at {generated} "
         f"({rejected_count} string reject assertions, "
         f"{byte_rejected_count} byte reject assertions)"
+    )
+
+
+def write_strict_tests(
+    repo: Path,
+    valid_1_0: list[Path],
+    only_1_1: list[Path],
+    generated: Path,
+) -> None:
+    only_1_1_paths = {
+        path.with_suffix("").relative_to("valid").as_posix() for path in only_1_1
+    }
+    assert_known_paths(
+        "STRICT_1_0_REJECT_IN_1_1", STRICT_1_0_REJECT_IN_1_1, only_1_1_paths
+    )
+
+    accept = list(valid_1_0)
+    accept.extend(
+        path
+        for path in only_1_1
+        if path.with_suffix("").relative_to("valid").as_posix()
+        not in STRICT_1_0_REJECT_IN_1_1
+    )
+    accept.sort()
+
+    reject = [
+        path
+        for path in only_1_1
+        if path.with_suffix("").relative_to("valid").as_posix()
+        in STRICT_1_0_REJECT_IN_1_1
+    ]
+
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    with generated.open("w", encoding="utf-8") as out:
+        write_gleam_prelude(out)
+        for rel_path in accept:
+            rel = rel_path.with_suffix("").relative_to("valid").as_posix()
+            data = read_text_preserving_newlines(repo / "tests" / rel_path)
+            out.write(f"pub fn {gleam_test_name('strict10valid', rel)}() {{\n")
+            out.write(f"  let input = from_codepoints({gleam_codepoints(data)})\n")
+            out.write(
+                "  let assert Ok(_) = "
+                "tomlet.parse_with(input, tomlet.Toml10)\n"
+            )
+            out.write("}\n\n")
+        for rel_path in reject:
+            rel = rel_path.with_suffix("").relative_to("valid").as_posix()
+            data = read_text_preserving_newlines(repo / "tests" / rel_path)
+            out.write(f"pub fn {gleam_test_name('strict10reject', rel)}() {{\n")
+            out.write(f"  let input = from_codepoints({gleam_codepoints(data)})\n")
+            out.write(
+                "  let assert Error(_) = "
+                "tomlet.parse_with(input, tomlet.Toml10)\n"
+            )
+            out.write("}\n\n")
+
+    print(
+        f"generated {len(accept) + len(reject)} strict TOML 1.0 tests at {generated} "
+        f"({len(accept)} accept assertions, {len(reject)} reject assertions)"
     )
 
 
@@ -253,9 +373,13 @@ def gleam_test_name(prefix: str, rel: str) -> str:
     return f"{prefix}_{suffix}_test"
 
 
-def run_gleam_targets(targets: list[str]) -> None:
+def run_gleam_targets(targets: list[str]) -> bool:
+    ok = True
     for target in targets:
-        subprocess.run(["gleam", "test", "--target", target], cwd=ROOT, check=True)
+        result = subprocess.run(["gleam", "test", "--target", target], cwd=ROOT)
+        if result.returncode != 0:
+            ok = False
+    return ok
 
 
 if __name__ == "__main__":

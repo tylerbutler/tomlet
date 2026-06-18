@@ -292,14 +292,29 @@ pub fn new() -> Document {
   )
 }
 
-/// Parse TOML 1.0 text into a document.
+/// The TOML language version to parse against.
+pub type TomlVersion {
+  Toml10
+  Toml11
+}
+
+/// Parse TOML 1.1 text into a document. Use `parse_with(input, Toml10)` for
+/// strict TOML 1.0 parsing that rejects 1.1-only syntax.
 ///
 /// Successful parses return an opaque `Document` that preserves comments,
 /// formatting trivia, key order, and the original line ending style for
 /// round-tripping. Invalid text returns `ParseError`, including byte offsets for
 /// syntax and duplicate-key diagnostics.
 pub fn parse(input: String) -> Result(Document, ParseError) {
-  parse_string(input)
+  parse_string_with(input, Toml11)
+}
+
+/// Parse TOML text against the given language version.
+pub fn parse_with(
+  input: String,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
+  parse_string_with(input, version)
 }
 
 /// Parse a standalone TOML value literal.
@@ -318,7 +333,7 @@ pub fn parse_value(input: String) -> Result(Value, ParseError) {
   let key = "__tomlet_value__"
   let prefix = key <> " = "
   let source = prefix <> input <> "\n"
-  case parse_string(source) {
+  case parse_string_with(source, Toml11) {
     Ok(doc) ->
       case get(doc, [key]) {
         Ok(value) -> Ok(value)
@@ -358,6 +373,21 @@ fn value_offset(offset: Int, prefix_size: Int) -> Int {
 /// // -> Error(tomlet.InvalidEncoding)
 /// ```
 pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
+  parse_bytes_versioned(input, Toml11)
+}
+
+/// Parse TOML bytes against the given language version.
+pub fn parse_bytes_with(
+  input: BitArray,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
+  parse_bytes_versioned(input, version)
+}
+
+fn parse_bytes_versioned(
+  input: BitArray,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
   // Strip a single leading UTF-8 BOM (0xEF 0xBB 0xBF). Pattern matching on the
   // bytes avoids slice/length arithmetic and a fallback that could otherwise
   // misreport a leading BOM as an embedded one.
@@ -370,7 +400,7 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
     True -> Error(InvalidEncoding)
     False ->
       case bit_array.to_string(input_without_initial_bom) {
-        Ok(decoded) -> parse_string(decoded)
+        Ok(decoded) -> parse_string_with(decoded, version)
         Error(_) -> Error(InvalidEncoding)
       }
   }
@@ -480,12 +510,18 @@ fn bit_array_contains_utf8_bom(input: BitArray) -> Bool {
   }
 }
 
-fn parse_string(input: String) -> Result(Document, ParseError) {
+fn parse_string_with(
+  input: String,
+  version: TomlVersion,
+) -> Result(Document, ParseError) {
   let line_ending = case string.contains(input, "\r\n") {
     True -> Crlf
     False -> Lf
   }
-  let input_without_initial_bom = drop_initial_bom(input)
+  let input_without_initial_bom = case string.to_graphemes(input) {
+    ["\u{FEFF}", ..rest] -> string.concat(rest)
+    _ -> input
+  }
 
   case string.contains(input_without_initial_bom, "\u{FEFF}") {
     True -> Error(InvalidEncoding)
@@ -493,7 +529,7 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
       // Parsed AST source_text is LF-only; CRLF is tracked separately on Document.
       let normalized = string.replace(input_without_initial_bom, "\r\n", "\n")
 
-      case parser.parse(normalized, parser.Toml11) {
+      case parser.parse(normalized, to_parser_version(version)) {
         Ok(root) ->
           Ok(Document(
             root: root,
@@ -510,6 +546,13 @@ fn parse_string(input: String) -> Result(Document, ParseError) {
           Error(DuplicateKey(key, normalized_offset_to_original(input, offset)))
       }
     }
+  }
+}
+
+fn to_parser_version(version: TomlVersion) -> parser.Version {
+  case version {
+    Toml10 -> parser.Toml10
+    Toml11 -> parser.Toml11
   }
 }
 
@@ -601,13 +644,6 @@ fn syntax_error_kind(expected: parser.ExpectedTokenKind) -> SyntaxErrorKind {
     parser.ExpectedKey -> ExpectedKey
     parser.ExpectedTableHeader -> ExpectedTableHeader
     parser.ExpectedSyntax -> InvalidToml
-  }
-}
-
-fn drop_initial_bom(input: String) -> String {
-  case string.to_graphemes(input) {
-    ["\u{FEFF}", ..rest] -> string.concat(rest)
-    _ -> input
   }
 }
 
@@ -1030,7 +1066,7 @@ fn collect_key_value_entry(
   case key_utils.starts_with(full_key, target) && full_key != target {
     True ->
       collect_table_entries(rest, next_active_table, target, True, [
-        #(drop_prefix(full_key, target), public_value(value)),
+        #(list.drop(full_key, list.length(target)), public_value(value)),
         ..collected
       ])
     False ->
@@ -1081,14 +1117,6 @@ fn collect_table_entries(
           )
       }
     }
-  }
-}
-
-fn drop_prefix(values: List(String), prefix: List(String)) -> List(String) {
-  case values, prefix {
-    rest, [] -> rest
-    [_, ..rest], [_, ..prefix_rest] -> drop_prefix(rest, prefix_rest)
-    _, _ -> []
   }
 }
 
