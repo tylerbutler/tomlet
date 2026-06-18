@@ -298,25 +298,8 @@ pub type TomlVersion {
   Toml11
 }
 
-/// Parsing options. Construct with `default_options` and refine with builders
-/// such as `with_version`.
-pub opaque type Options {
-  Options(version: TomlVersion)
-}
-
-/// Default options: parse TOML 1.1.
-pub fn default_options() -> Options {
-  Options(version: Toml11)
-}
-
-/// Set the TOML version to parse against.
-pub fn with_version(_options: Options, version: TomlVersion) -> Options {
-  Options(version: version)
-}
-
-/// Parse TOML 1.1 text into a document. Use `parse_with` with
-/// `with_version(default_options(), Toml10)` for strict TOML 1.0 parsing that
-/// rejects 1.1-only syntax.
+/// Parse TOML 1.1 text into a document. Use `parse_with(input, Toml10)` for
+/// strict TOML 1.0 parsing that rejects 1.1-only syntax.
 ///
 /// Successful parses return an opaque `Document` that preserves comments,
 /// formatting trivia, key order, and the original line ending style for
@@ -326,12 +309,12 @@ pub fn parse(input: String) -> Result(Document, ParseError) {
   parse_string_with(input, Toml11)
 }
 
-/// Parse TOML text using the given options.
+/// Parse TOML text against the given language version.
 pub fn parse_with(
   input: String,
-  options: Options,
+  version: TomlVersion,
 ) -> Result(Document, ParseError) {
-  parse_string_with(input, options.version)
+  parse_string_with(input, version)
 }
 
 /// Parse a standalone TOML value literal.
@@ -393,12 +376,12 @@ pub fn parse_bytes(input: BitArray) -> Result(Document, ParseError) {
   parse_bytes_versioned(input, Toml11)
 }
 
-/// Parse TOML bytes using the given options.
+/// Parse TOML bytes against the given language version.
 pub fn parse_bytes_with(
   input: BitArray,
-  options: Options,
+  version: TomlVersion,
 ) -> Result(Document, ParseError) {
-  parse_bytes_versioned(input, options.version)
+  parse_bytes_versioned(input, version)
 }
 
 fn parse_bytes_versioned(
@@ -535,7 +518,10 @@ fn parse_string_with(
     True -> Crlf
     False -> Lf
   }
-  let input_without_initial_bom = drop_initial_bom(input)
+  let input_without_initial_bom = case string.to_graphemes(input) {
+    ["\u{FEFF}", ..rest] -> string.concat(rest)
+    _ -> input
+  }
 
   case string.contains(input_without_initial_bom, "\u{FEFF}") {
     True -> Error(InvalidEncoding)
@@ -658,13 +644,6 @@ fn syntax_error_kind(expected: parser.ExpectedTokenKind) -> SyntaxErrorKind {
     parser.ExpectedKey -> ExpectedKey
     parser.ExpectedTableHeader -> ExpectedTableHeader
     parser.ExpectedSyntax -> InvalidToml
-  }
-}
-
-fn drop_initial_bom(input: String) -> String {
-  case string.to_graphemes(input) {
-    ["\u{FEFF}", ..rest] -> string.concat(rest)
-    _ -> input
   }
 }
 
@@ -1087,7 +1066,7 @@ fn collect_key_value_entry(
   case key_utils.starts_with(full_key, target) && full_key != target {
     True ->
       collect_table_entries(rest, next_active_table, target, True, [
-        #(drop_prefix(full_key, target), public_value(value)),
+        #(list.drop(full_key, list.length(target)), public_value(value)),
         ..collected
       ])
     False ->
@@ -1138,14 +1117,6 @@ fn collect_table_entries(
           )
       }
     }
-  }
-}
-
-fn drop_prefix(values: List(String), prefix: List(String)) -> List(String) {
-  case values, prefix {
-    rest, [] -> rest
-    [_, ..rest], [_, ..prefix_rest] -> drop_prefix(rest, prefix_rest)
-    _, _ -> []
   }
 }
 
