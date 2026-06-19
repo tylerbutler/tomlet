@@ -2,6 +2,7 @@
 import "@fontsource-variable/bricolage-grotesque";
 import "@fontsource-variable/jetbrains-mono";
 import "../styles/global.css";
+import { Script } from "astro-tinylytics";
 
 interface Props {
   title?: string;
@@ -45,6 +46,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
     <meta name="theme-color" content="#f6c83b" />
+    <Script embedCode="xMjMrUKCRoUmoT4zxsSr" min events beacon />
   </head>
   <body>
     <slot />

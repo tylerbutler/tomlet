@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import Logo from "../components/Logo.astro";
 import CodePanel from "../components/CodePanel.astro";
+import { Event } from "astro-tinylytics";
 
 const repo = "https://github.com/tylerbutler/tomlet";
 const docs = "https://hexdocs.pm/tomlet/";
@@ -106,13 +107,13 @@ const typedAccess =
             <div class="install" role="group" aria-label="Install command">
               <span class="install__prompt" aria-hidden="true">$</span>
               <code id="install-cmd">gleam add tomlet</code>
-              <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
+              <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span class="install__copied" aria-hidden="true">plated!</span>
-              </button>
+              </Event>
               <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
             </div>
-            <a class="btn btn--ghost" href="#how">See it round-trip ↓</a>
+            <Event name="nav.round-trip" as="a" class="btn btn--ghost" href="#how">See it round-trip ↓</Event>
           </div>
 
           <ul class="hero__proof" aria-label="What gleam add tomlet gets you">
@@ -250,8 +251,8 @@ const typedAccess =
             matchable error instead of a guess.
           </p>
           <div class="taste__links">
-            <a class="btn btn--primary" href={docs}>Read the docs</a>
-            <a class="btn btn--ghost" href={repo}>Browse the source</a>
+            <Event name="docs.read" as="a" class="btn btn--primary" href={docs}>Read the docs</Event>
+            <Event name="source.browse" as="a" class="btn btn--ghost" href={repo}>Browse the source</Event>
           </div>
         </div>
 
@@ -287,13 +288,13 @@ const typedAccess =
             <div class="install install--dark" role="group" aria-label="Install command (why section)">
               <span class="install__prompt" aria-hidden="true">$</span>
               <code>gleam add tomlet</code>
-              <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (why section)">
+              <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (why section)">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span class="install__copied" aria-hidden="true">plated!</span>
-              </button>
+              </Event>
               <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
             </div>
-            <a class="why__cta-docs" href={docs}>Read the docs <span aria-hidden="true">→</span></a>
+            <Event name="docs.read" as="a" class="why__cta-docs" href={docs}>Read the docs <span aria-hidden="true">→</span></Event>
           </div>
         </div>
       </div>
@@ -319,10 +320,10 @@ const typedAccess =
           <h4>Get it</h4>
           <div class="install foot__install" role="group" aria-label="Install command (footer)">
             <code>gleam add tomlet</code>
-            <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (footer)">
+            <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (footer)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               <span class="install__copied" aria-hidden="true">plated!</span>
-            </button>
+            </Event>
             <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
           </div>
           <a href={hex}>hex.pm/packages/tomlet</a>
