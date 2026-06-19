@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.3.0 - 2026-06-19
+
+
+#### Added
+
+##### Tomlet now parses TOML 1.1 by default. This accepts multiline inline tables,
+
+trailing commas in inline tables, `\xHH` and `\e` string escapes, and times
+or date-times without seconds. Pass `Toml10` to `tomlet.parse_with` or
+`tomlet.parse_bytes_with` to keep strict TOML 1.0 parsing.
+
+
 ## v1.2.0 - 2026-06-18
 
 

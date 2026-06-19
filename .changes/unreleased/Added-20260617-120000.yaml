@@ -1,7 +1,0 @@
-kind: Added
-body: |-
-  Tomlet now parses TOML 1.1 by default. This accepts multiline inline tables,
-  trailing commas in inline tables, `\xHH` and `\e` string escapes, and times
-  or date-times without seconds. Pass `Toml10` to `tomlet.parse_with` or
-  `tomlet.parse_bytes_with` to keep strict TOML 1.0 parsing.
-time: 2026-06-17T12:00:00.000000000-07:00
