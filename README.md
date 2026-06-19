@@ -21,21 +21,30 @@ gleam add tomlet
 import tomlet
 
 pub fn main() {
-  let assert Ok(doc) = tomlet.parse("
+  let source =
+    "
 # the user's favorite snack
 snack = \"tomato\"  # raw, with salt
-")
+"
 
-  let assert Ok(updated) =
-    tomlet.set_string(doc, ["snack"], "tomato sandwich")
-
-  tomlet.to_string(updated)
-  // -> "
-  // # the user's favorite snack
-  // snack = \"tomato sandwich\"  # raw, with salt
-  // "
+  case tomlet.parse(source) {
+    Ok(doc) ->
+      case tomlet.set_string(doc, ["snack"], "tomato sandwich") {
+        Ok(updated) -> tomlet.to_string(updated)
+        // -> "
+        // # the user's favorite snack
+        // snack = \"tomato sandwich\"  # raw, with salt
+        // "
+        Error(error) -> handle_edit_error(error)
+      }
+    Error(error) -> handle_parse_error(error)
+  }
 }
 ```
+
+The `handle_*` functions above are placeholders for your own error handling;
+each `case` surfaces the `ParseError`, `GetError`, or `EditError` that tomlet
+returns instead of crashing.
 
 ## Parsing and typed access
 
@@ -43,8 +52,14 @@ Use `tomlet.parse` for `String` input, or `tomlet.parse_bytes` when raw bytes
 need TOML-compliant UTF-8 and BOM validation before parsing.
 
 ```gleam
-let assert Ok(doc) = tomlet.parse_bytes(<<"answer = 42\n":utf8>>)
-let assert Ok(answer) = tomlet.get_int(doc, ["answer"])
+case tomlet.parse_bytes(<<"answer = 42\n":utf8>>) {
+  Ok(doc) ->
+    case tomlet.get_int(doc, ["answer"]) {
+      Ok(answer) -> answer
+      Error(error) -> handle_get_error(error)
+    }
+  Error(error) -> handle_parse_error(error)
+}
 ```
 
 Typed accessors include `get_string`, `get_int`, `get_bool`, `get_float`,
@@ -54,17 +69,28 @@ arrays, inline tables, standard tables (`StandardTableValue`), and arrays of
 tables.
 
 ```gleam
-let assert Ok(doc) = tomlet.parse("released = 2026-05-25\n")
-let assert Ok(tomlet.DateValue(date)) = tomlet.get(doc, ["released"])
-let text = tomlet.date_to_string(date)
-// -> "2026-05-25"
+case tomlet.parse("released = 2026-05-25\n") {
+  Ok(doc) ->
+    case tomlet.get(doc, ["released"]) {
+      Ok(tomlet.DateValue(date)) -> tomlet.date_to_string(date)
+      // -> "2026-05-25"
+      _ -> handle_unexpected_value()
+    }
+  Error(error) -> handle_parse_error(error)
+}
 ```
 
 Inline table values are addressed with the same key path syntax:
 
 ```gleam
-let assert Ok(doc) = tomlet.parse("pkg = { name = \"tomato\" }\n")
-let assert Ok(name) = tomlet.get_string(doc, ["pkg", "name"])
+case tomlet.parse("pkg = { name = \"tomato\" }\n") {
+  Ok(doc) ->
+    case tomlet.get_string(doc, ["pkg", "name"]) {
+      Ok(name) -> name
+      Error(error) -> handle_get_error(error)
+    }
+  Error(error) -> handle_parse_error(error)
+}
 ```
 
 Typed accessor mismatches return `WrongType(path, expected)`, where `expected`
@@ -129,11 +155,20 @@ let input =
   <> "enabled = true\n"
   <> "ratio = 3.14\n"
 
-let assert Ok(doc) = tomlet.parse(input)
-let assert Ok(title) = tomlet.get_string(doc, ["title"])
-let assert Ok(version) = tomlet.get_int(doc, ["version"])
-let assert Ok(enabled) = tomlet.get_bool(doc, ["enabled"])
-let assert Ok(ratio) = tomlet.get_float(doc, ["ratio"])
+case tomlet.parse(input) {
+  Ok(doc) ->
+    case
+      tomlet.get_string(doc, ["title"]),
+      tomlet.get_int(doc, ["version"]),
+      tomlet.get_bool(doc, ["enabled"]),
+      tomlet.get_float(doc, ["ratio"])
+    {
+      Ok(title), Ok(version), Ok(enabled), Ok(ratio) ->
+        #(title, version, enabled, ratio)
+      _, _, _, _ -> handle_get_error()
+    }
+  Error(error) -> handle_parse_error(error)
+}
 ```
 
 Edit a document and write it back:
@@ -145,34 +180,54 @@ let input =
   <> "version = 0\n"
   <> "draft = true\n"
 
-let assert Ok(doc) = tomlet.parse(input)
-let assert Ok(doc) = tomlet.set_int(doc, ["version"], 1)
-let assert Ok(doc) = tomlet.remove(doc, ["draft"])
-let assert Ok(doc) =
-  tomlet.insert_comment_before(doc, ["version"], "first stable release")
-
-tomlet.to_string(doc)
-// -> "
-// # package metadata
-// name = \"tomlet\"
-// # first stable release
-// version = 1
-// "
+case tomlet.parse(input) {
+  Ok(doc) ->
+    case tomlet.set_int(doc, ["version"], 1) {
+      Ok(doc) ->
+        case tomlet.remove(doc, ["draft"]) {
+          Ok(doc) ->
+            case
+              tomlet.insert_comment_before(
+                doc,
+                ["version"],
+                "first stable release",
+              )
+            {
+              Ok(doc) -> tomlet.to_string(doc)
+              // -> "
+              // # package metadata
+              // name = \"tomlet\"
+              // # first stable release
+              // version = 1
+              // "
+              Error(error) -> handle_edit_error(error)
+            }
+          Error(error) -> handle_edit_error(error)
+        }
+      Error(error) -> handle_edit_error(error)
+    }
+  Error(error) -> handle_parse_error(error)
+}
 ```
 
 Start from an empty document:
 
 ```gleam
 let doc = tomlet.new()
-let assert Ok(doc) = tomlet.set_string(doc, ["package", "name"], "tomlet")
-let assert Ok(doc) = tomlet.set_int(doc, ["package", "version"], 1)
 
-tomlet.to_string(doc)
-// -> "
-// [package]
-// name = \"tomlet\"
-// version = 1
-// "
+case tomlet.set_string(doc, ["package", "name"], "tomlet") {
+  Ok(doc) ->
+    case tomlet.set_int(doc, ["package", "version"], 1) {
+      Ok(doc) -> tomlet.to_string(doc)
+      // -> "
+      // [package]
+      // name = \"tomlet\"
+      // version = 1
+      // "
+      Error(error) -> handle_edit_error(error)
+    }
+  Error(error) -> handle_edit_error(error)
+}
 ```
 
 Report parse errors with line and column information:
