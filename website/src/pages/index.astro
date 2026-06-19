@@ -831,7 +831,9 @@ const typedAccess =
             }
           });
         },
-        { threshold: 0.55 },
+        // -20% bottom margin holds the trigger until the demo is well past
+        // the fold, so the round-trip plays a beat later into the scroll.
+        { threshold: 0.55, rootMargin: "0px 0px -20% 0px" },
       );
       io.observe(demo);
     } else {
