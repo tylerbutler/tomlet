@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import Logo from "../components/Logo.astro";
 import CodePanel from "../components/CodePanel.astro";
+import { Event } from "astro-tinylytics";
 
 const repo = "https://github.com/tylerbutler/tomlet";
 const docs = "https://hexdocs.pm/tomlet/";
@@ -13,12 +14,15 @@ const keep = (s: string, kind = "kept") => {
 };
 
 const demoIn =
-`${keep("# the user&#39;s favorite snack")}
-<span class="t-key">snack</span> <span class="t-eq">=</span> <span class="t-str">"tomato"</span>  ${keep("# raw, with salt")}`;
+`${keep("# published to Hex on each tag")}
+<span class="t-key">version</span> <span class="t-eq">=</span> <span class="t-str">"1.2.0"</span>  ${keep("# keep in sync with the changelog")}`;
+
+const foldValue =
+`<span class="fold" data-fold><span class="fold__new"><span class="t-str">"1.3.0"</span></span><span class="fold__old" aria-hidden="true"><span class="t-str">"1.2.0"</span></span></span>`;
 
 const demoOut =
-`${keep("# the user&#39;s favorite snack")}
-<span class="t-key">snack</span> <span class="t-eq">=</span> <span class="t-str">"tomato sandwich"</span>  ${keep("# raw, with salt")}`;
+`${keep("# published to Hex on each tag")}
+<span class="t-key">version</span> <span class="t-eq">=</span> ${foldValue}  ${keep("# keep in sync with the changelog")}`;
 
 const beforeToml =
 `<span class="t-com"># package metadata</span>
@@ -27,10 +31,13 @@ const beforeToml =
 <span class="t-key">draft</span> <span class="t-eq">=</span> <span class="t-bool">true</span>`;
 
 const editCode =
-`<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>(doc, [<span class="t-str">"version"</span>], <span class="t-num">1</span>)
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(doc, [<span class="t-str">"draft"</span>])
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
-  doc, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>)`;
+`<span class="t-kw">use</span> doc <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">set_int</span>(doc, [<span class="t-str">"version"</span>], <span class="t-num">1</span>))
+<span class="t-kw">use</span> doc <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">remove</span>(doc, [<span class="t-str">"draft"</span>]))
+<span class="t-kw">use</span> doc <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(
+  <span class="t-mod">tomlet</span>.<span class="t-fn">insert_comment_before</span>(
+    doc, [<span class="t-str">"version"</span>], <span class="t-str">"first stable release"</span>,
+  ),
+)`;
 
 const afterToml =
 `<span class="t-com"># package metadata</span>
@@ -39,14 +46,14 @@ ${keep("# first stable release", "new")}
 <span class="t-key">version</span> <span class="t-eq">=</span> <span class="t-num">1</span>`;
 
 const typedAccess =
-`<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(doc) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">parse</span>(input)
+`<span class="t-kw">use</span> doc <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">parse</span>(input))
 
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(title)   <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"title"</span>])
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(version) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_int</span>(doc, [<span class="t-str">"version"</span>])
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(enabled) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_bool</span>(doc, [<span class="t-str">"enabled"</span>])
+<span class="t-kw">use</span> title   <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"title"</span>]))
+<span class="t-kw">use</span> version <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">get_int</span>(doc, [<span class="t-str">"version"</span>]))
+<span class="t-kw">use</span> enabled <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">get_bool</span>(doc, [<span class="t-str">"enabled"</span>]))
 
 <span class="t-com">// nested keys use the same path syntax</span>
-<span class="t-kw">let assert</span> <span class="t-fn">Ok</span>(name) <span class="t-eq">=</span> <span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"pkg"</span>, <span class="t-str">"name"</span>])`;
+<span class="t-kw">use</span> name <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"pkg"</span>, <span class="t-str">"name"</span>]))`;
 ---
 
 <Layout>
@@ -91,7 +98,7 @@ const typedAccess =
           <p class="hero__kicker"><span>TOML&nbsp;+&nbsp;omelette</span> · a tidy little parser for Gleam</p>
           <h1 class="hero__title">TOML that<br />keeps your<br /><span class="hero__under">comments.</span></h1>
           <p class="hero__lede">
-            tomlet parses TOML 1.0.0 into a document that remembers every comment,
+            tomlet parses TOML 1.1 into a document that remembers every comment,
             key order, and bit of whitespace. Edit a value, write it back, and the
             rest of the file comes out exactly how the human left it.
           </p>
@@ -100,31 +107,42 @@ const typedAccess =
             <div class="install" role="group" aria-label="Install command">
               <span class="install__prompt" aria-hidden="true">$</span>
               <code id="install-cmd">gleam add tomlet</code>
-              <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
+              <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span class="install__copied" aria-hidden="true">plated!</span>
-              </button>
+              </Event>
               <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
             </div>
-            <a class="btn btn--ghost" href="#how">See it round-trip ↓</a>
+            <Event name="nav.round-trip" as="a" class="btn btn--ghost" href="#how">See it round-trip ↓</Event>
           </div>
+
+          <ul class="hero__proof" aria-label="What gleam add tomlet gets you">
+            <li>TOML&nbsp;1.1 by default,<span>strict 1.0 on request</span></li>
+            <li>Same Gleam on Erlang &amp; JS</li>
+            <li>Comments, order &amp; CRLF survive every write</li>
+          </ul>
         </div>
 
         <!-- round-trip demo -->
         <figure class="demo reveal" aria-label="A comment surviving an edit">
-          <CodePanel label="config.toml" lang="in" class="demo__panel" code={demoIn} />
+          <CodePanel label="gleam.toml" lang="in" class="demo__panel" code={demoIn} />
 
           <div class="demo__op" aria-hidden="true">
             <span class="demo__op-line"></span>
-            <code class="demo__op-call"><span class="t-mod">tomlet</span>.<span class="t-fn">set_string</span>(doc, [<span class="t-str">"snack"</span>], <span class="t-str">"tomato sandwich"</span>)</code>
+            <code class="demo__op-call"><span class="t-mod">tomlet</span>.<span class="t-fn">set_string</span>(doc, [<span class="t-str">"version"</span>], <span class="t-str">"1.3.0"</span>)</code>
             <span class="demo__op-arrow">↓</span>
           </div>
 
-          <CodePanel label="config.toml" lang="out" class="demo__panel" code={demoOut} />
+          <CodePanel label="gleam.toml" lang="out" class="demo__panel demo__panel--out" code={demoOut} />
 
           <figcaption class="demo__caption">
             <span class="demo__chip">comments preserved</span>
-            Only the value changed. Both comments stayed put.
+            <span class="demo__caption-say">Only the value changed. Both comments stayed put.</span>
+            <button class="demo__replay" type="button" data-fold-replay aria-label="Replay the round-trip edit">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg>
+              <span>Replay</span>
+            </button>
+            <span class="demo__rm-note">Final state shown</span>
           </figcaption>
         </figure>
       </div>
@@ -156,20 +174,30 @@ const typedAccess =
           </p>
         </div>
 
-        <div class="how__grid">
-          <CodePanel label="before · gleam.toml" lang="toml" code={beforeToml} />
-
-          <CodePanel label="three checked edits" lang="gleam" code={editCode} />
-
-          <CodePanel label="after · gleam.toml" lang="toml" code={afterToml} />
-
-          <p class="how__note">
-            <span class="how__note-mark" aria-hidden="true">↳</span>
-            <span>The <b>package metadata</b> header never moved, <b>name</b> is
-            untouched, the new comment landed right where you asked, and
-            <b>draft</b> is simply gone.</span>
-          </p>
+        <div class="how__flow">
+          <div class="how__step">
+            <CodePanel label="before · gleam.toml" lang="toml" code={beforeToml} />
+          </div>
+          <div class="how__arrow" aria-hidden="true">
+            <span class="how__arrow-line"></span><span class="how__arrow-head">→</span>
+          </div>
+          <div class="how__step how__step--edit">
+            <CodePanel label="three checked edits" lang="gleam" code={editCode} />
+          </div>
+          <div class="how__arrow" aria-hidden="true">
+            <span class="how__arrow-line"></span><span class="how__arrow-head">→</span>
+          </div>
+          <div class="how__step">
+            <CodePanel label="after · gleam.toml" lang="toml" code={afterToml} />
+          </div>
         </div>
+
+        <p class="how__note">
+          <span class="how__note-mark" aria-hidden="true">↳</span>
+          <span>The <b>package metadata</b> header never moved, <b>name</b> is
+          untouched, the new comment landed right where you asked, and
+          <b>draft</b> is simply gone.</span>
+        </p>
       </div>
     </section>
 
@@ -202,8 +230,9 @@ const typedAccess =
             <Logo size={24} class="recipe__mark" decorative />
             <div>
               <h3>Spec-correct, on both targets</h3>
-              <p>Pure Gleam with no native dependencies &mdash; identical on Erlang and
-                 JavaScript, validated against the official <code>toml-test</code> corpora.</p>
+              <p>Parses TOML 1.1 by default with a strict 1.0 mode &mdash; pure Gleam,
+                 no native dependencies, identical on Erlang and JavaScript and
+                 validated against the official <code>toml-test</code> corpora.</p>
             </div>
           </li>
         </ul>
@@ -222,8 +251,8 @@ const typedAccess =
             matchable error instead of a guess.
           </p>
           <div class="taste__links">
-            <a class="btn btn--primary" href={docs}>Read the docs</a>
-            <a class="btn btn--ghost" href={repo}>Browse the source</a>
+            <Event name="docs.read" as="a" class="btn btn--primary" href={docs}>Read the docs</Event>
+            <Event name="source.browse" as="a" class="btn btn--ghost" href={repo}>Browse the source</Event>
           </div>
         </div>
 
@@ -256,16 +285,16 @@ const typedAccess =
           </p>
 
           <div class="why__cta">
-            <div class="install install--dark" role="group" aria-label="Install command">
+            <div class="install install--dark" role="group" aria-label="Install command (why section)">
               <span class="install__prompt" aria-hidden="true">$</span>
               <code>gleam add tomlet</code>
-              <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
+              <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (why section)">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 <span class="install__copied" aria-hidden="true">plated!</span>
-              </button>
+              </Event>
               <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
             </div>
-            <a class="why__cta-docs" href={docs}>Read the docs <span aria-hidden="true">→</span></a>
+            <Event name="docs.read" as="a" class="why__cta-docs" href={docs}>Read the docs <span aria-hidden="true">→</span></Event>
           </div>
         </div>
       </div>
@@ -289,12 +318,12 @@ const typedAccess =
       <div class="foot__cols">
         <div class="foot__col">
           <h4>Get it</h4>
-          <div class="install foot__install" role="group" aria-label="Install command">
+          <div class="install foot__install" role="group" aria-label="Install command (footer)">
             <code>gleam add tomlet</code>
-            <button class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command">
+            <Event name="install.copy" value="gleam add tomlet" class="install__copy" data-copy="gleam add tomlet" aria-label="Copy install command (footer)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              <span class="install__copied" aria-hidden="true">✓</span>
-            </button>
+              <span class="install__copied" aria-hidden="true">plated!</span>
+            </Event>
             <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
           </div>
           <a href={hex}>hex.pm/packages/tomlet</a>
@@ -302,7 +331,8 @@ const typedAccess =
         <div class="foot__col">
           <h4>Learn</h4>
           <a href={docs}>API documentation</a>
-          <a href="https://toml.io/en/v1.0.0">TOML 1.0.0 spec</a>
+          <a href="https://toml.io/en/v1.1.0">TOML 1.1 spec</a>
+          <a href="https://toml.io/en/v1.0.0">TOML 1.0 spec</a>
         </div>
         <div class="foot__col">
           <h4>Source</h4>
@@ -322,8 +352,7 @@ const typedAccess =
   /* ---------- NAV ---------- */
   .nav {
     position: sticky; top: 0; z-index: var(--z-nav);
-    background: oklch(0.971 0.010 85 / 0.82);
-    backdrop-filter: saturate(1.4) blur(10px);
+    background: var(--eggshell);
     border-bottom: 1px solid var(--shell-line);
   }
   .nav__inner { display: flex; align-items: center; justify-content: space-between; height: 4.1rem; }
@@ -335,7 +364,8 @@ const typedAccess =
   .nav__links a { color: var(--ink); text-decoration: none; font-weight: 520; font-size: 0.98rem; }
   .nav__links a:hover { color: var(--paprika-ink); }
   .nav__scroll { display: none; }
-  .nav__gh { display: inline-flex; }
+  .nav__gh { display: inline-flex; position: relative; }
+  .nav__gh::before { content: ""; position: absolute; inset: -12px; }
   @media (min-width: 720px) { .nav__scroll { display: inline; } }
 
   /* ---------- HERO ---------- */
@@ -381,7 +411,7 @@ const typedAccess =
     font-weight: 600;
   }
   .hero__title {
-    font-size: var(--step-5); line-height: 0.96; letter-spacing: -0.045em;
+    font-size: var(--step-5); line-height: 0.96; letter-spacing: -0.03em;
     margin-bottom: 1.3rem;
   }
   .hero__under { position: relative; white-space: nowrap; }
@@ -392,6 +422,18 @@ const typedAccess =
   }
   .hero__lede { font-size: var(--step-1); color: var(--ink-soft); max-width: 34ch; line-height: 1.45; }
   .hero__cta { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 2rem; }
+
+  .hero__proof {
+    list-style: none; padding: 0; margin-top: 1.5rem;
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1rem;
+    font-size: var(--step--1); font-weight: 500; color: var(--ink-soft);
+  }
+  .hero__proof li { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .hero__proof li::before {
+    content: ""; flex: none;
+    width: 0.42em; height: 0.42em; border-radius: 50%;
+    background: var(--chive);
+  }
 
   .install {
     display: inline-flex; align-items: center; gap: 0.7rem;
@@ -407,6 +449,7 @@ const typedAccess =
     background: var(--skillet-2); color: var(--eggshell); cursor: pointer;
     transition: background-color 0.15s var(--ease-out-quart);
   }
+  .install__copy::before { content: ""; position: absolute; inset: -6px; }
   .install__copy:hover { background: var(--paprika); color: var(--ink); }
   .install__copied {
     position: absolute; inset: 0; display: grid; place-items: center;
@@ -443,6 +486,83 @@ const typedAccess =
     padding: 0.25em 0.7em; border-radius: var(--radius-pill);
   }
   .demo__chip::before { content: ""; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--ink); }
+  .demo__replay {
+    display: inline-flex; align-items: center; gap: 0.4em;
+    margin-left: 0.1rem; padding: 0.28em 0.7em 0.28em 0.6em;
+    font-family: var(--font-display); font-weight: 600; font-size: 0.8rem;
+    color: var(--ink-soft); background: transparent;
+    border: 1.5px solid var(--shell-line); border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: color 0.15s var(--ease-out-quart),
+                border-color 0.15s var(--ease-out-quart),
+                background-color 0.15s var(--ease-out-quart);
+  }
+  .demo__replay svg { transition: transform 0.4s var(--ease-out-expo); }
+  .demo__replay:hover { color: var(--ink); border-color: var(--ink); background: var(--shell-deep); }
+  .demo__replay:hover svg { transform: rotate(-180deg); }
+  .demo__replay::before { content: ""; position: absolute; inset: -8px; }
+  .demo__replay { position: relative; }
+  .demo__rm-note {
+    display: none;
+    align-items: center; gap: 0.4em;
+    font-size: 0.8rem; font-weight: 500; color: var(--ink-soft);
+  }
+  .demo__rm-note::before {
+    content: ""; width: 0.5em; height: 0.5em; border-radius: 50%;
+    background: var(--chive); flex: none;
+  }
+
+  /* ---- the fold: the value rotates over while the comments hold still ---- */
+  :global(.fold) { display: inline-block; position: relative; perspective: 760px; }
+  :global(.fold__new) {
+    display: inline-block; transform-origin: 50% 100%; backface-visibility: hidden;
+  }
+  :global(.fold__old) {
+    position: absolute; inset: 0; transform-origin: 50% 0%; backface-visibility: hidden;
+    pointer-events: none;
+    opacity: 0; transform: rotateX(-92deg);          /* default = settled on the new value */
+  }
+  /* armed: snap to the "before" value with no transition */
+  .demo.is-armed :global(.fold__old) { opacity: 1; transform: none; }
+  .demo.is-armed :global(.fold__new) { opacity: 0; transform: rotateX(92deg); }
+  .demo.is-armed :global(.fold__old),
+  .demo.is-armed :global(.fold__new) { transition: none; }
+  /* playing: ease from the armed state back to the default → the fold */
+  .demo.is-playing :global(.fold__old),
+  .demo.is-playing :global(.fold__new) {
+    transition: transform 0.58s var(--ease-out-expo), opacity 0.42s var(--ease-out-quart);
+    will-change: transform, opacity;
+  }
+  .demo.is-playing :global(.fold__new) { animation: foldGlow 0.7s var(--ease-out-quart); }
+  @keyframes foldGlow {
+    0%   { text-shadow: 0 0 0 transparent; }
+    45%  { text-shadow: 0 0 14px oklch(0.80 0.158 78 / 0.65); }
+    100% { text-shadow: 0 0 0 transparent; }
+  }
+
+  /* the operation chip commits as the fold lands */
+  .demo__op-call { transition: opacity 0.35s var(--ease-out-quart), transform 0.35s var(--ease-out-quart); }
+  .demo.is-armed .demo__op-call { opacity: 0.28; transform: translateY(2px) scale(0.985); transition: none; }
+  .demo.is-playing .demo__op-arrow { animation: arrowDrop 0.58s var(--ease-out-expo); }
+  @keyframes arrowDrop {
+    0%   { transform: translateY(-5px); opacity: 0.25; }
+    55%  { opacity: 1; }
+    100% { transform: none; opacity: 1; }
+  }
+
+  /* the proof: the preserved comments pulse to show they never moved */
+  .demo.is-proof :global(.demo__panel--out .t-com.keep) { animation: keepPulse 0.75s var(--ease-out-quart); }
+  @keyframes keepPulse {
+    0%, 100% { box-shadow: inset 2px 0 0 var(--chive); }
+    35%      { box-shadow: inset 2px 0 0 var(--chive), 0 0 0 3px oklch(0.58 0.10 145 / 0.30); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :global(.fold__old) { display: none; }
+    :global(.fold__new) { opacity: 1; transform: none; }
+    .demo__replay { display: none; }
+    .demo__rm-note { display: inline-flex; }
+  }
 
   /* preserved-comment marker inside code */
   :global(.t-com.keep) {
@@ -475,7 +595,7 @@ const typedAccess =
   @media (min-width: 820px) { .promise__inner { grid-template-columns: auto 1fr; } }
   .promise__eq {
     font-family: var(--font-mono); font-weight: 600;
-    font-size: clamp(1.4rem, 1rem + 2.4vw, 2.6rem);
+    font-size: clamp(1.02rem, 0.62rem + 1.9vw, 2.6rem);
     letter-spacing: -0.02em; color: var(--yolk); white-space: nowrap;
   }
   .promise__eq .t-fn { color: var(--yolk); }
@@ -487,20 +607,40 @@ const typedAccess =
   .how__head { max-width: 40rem; margin-bottom: clamp(2rem, 4vw, 3.2rem); }
   .how__sub { color: var(--ink-soft); font-size: var(--step-1); }
   .measure { max-width: var(--measure); }
-  .how__grid {
-    display: grid; gap: clamp(0.8rem, 2vw, 1.3rem);
+  .how__flow {
+    display: grid;
+    gap: clamp(0.5rem, 1.4vw, 0.85rem);
     grid-template-columns: 1fr;
+    align-items: center;
   }
-  @media (min-width: 900px) {
-    .how__grid { grid-template-columns: 1fr 1fr; align-items: stretch; }
+  .how__step { min-width: 0; }
+  .how__arrow {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.3rem; padding-block: 0.15rem; color: var(--yolk-deep);
   }
+  .how__arrow-line { width: 2px; height: 0.85rem; background: var(--shell-line); }
+  .how__arrow-head { font-weight: 700; font-size: 1.3rem; line-height: 0.6; transform: rotate(90deg); }
+
+  @media (min-width: 1040px) {
+    .how__flow {
+      grid-template-columns: minmax(0, 0.8fr) auto minmax(0, 1.6fr) auto minmax(0, 0.8fr);
+    }
+    .how__flow :global(.panel__code) { font-size: 0.8rem; padding-left: 0.9rem; padding-right: 0.9rem; }
+    .how__arrow { flex-direction: row; gap: 0.4rem; padding-block: 0; }
+    .how__arrow-line { width: 0.85rem; height: 2px; }
+    .how__arrow-head { transform: none; font-size: 1.55rem; line-height: 1; }
+  }
+
   .how__note {
-    align-self: center;
-    color: var(--ink-soft); font-size: 1.05rem; line-height: 1.55;
-    display: flex; gap: 0.7rem; padding: 0.5rem 0.5rem;
+    margin-top: clamp(1.5rem, 3.2vw, 2.4rem);
+    padding-top: clamp(1.1rem, 2.4vw, 1.7rem);
+    border-top: 1px solid var(--shell-line);
+    max-width: 64ch;
+    color: var(--ink-soft); font-size: 1.05rem; line-height: 1.6;
+    display: flex; gap: 0.7rem;
   }
   @media (max-width: 560px) {
-    .how__note { font-size: 0.96rem; gap: 0.55rem; padding: 0.2rem 0.1rem; }
+    .how__note { font-size: 0.96rem; gap: 0.55rem; }
   }
   .how__note b { color: var(--ink); font-weight: 680; font-family: var(--font-mono); font-size: 0.92em; }
   .how__note-mark { color: var(--paprika); font-weight: 700; font-size: 1.3rem; line-height: 1; flex: none; }
@@ -575,11 +715,11 @@ const typedAccess =
   }
   .foot__install code { color: var(--yolk); }
   .foot__install .install__copy {
-    width: 1.7rem; height: 1.7rem; background: transparent; color: var(--on-skillet-soft);
+    width: 2.1rem; height: 2.1rem; background: transparent; color: var(--on-skillet-soft);
   }
   .foot__install .install__copy:hover { background: var(--skillet-2); color: var(--on-skillet); }
   .foot__install .install__copied {
-    background: var(--skillet-2); color: var(--chive-chip); font-size: 0.95rem;
+    background: var(--skillet-2); color: var(--chive-chip);
   }
   .foot__base {
     display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; justify-content: space-between;
@@ -648,4 +788,61 @@ const typedAccess =
       }, 2200);
     });
   });
+
+  /* ---- the fold: orchestrate the round-trip edit once it scrolls into view ---- */
+  const demo = document.querySelector<HTMLElement>(".demo");
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+  if (demo) {
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    const clear = () => {
+      timers.forEach(clearTimeout);
+      timers = [];
+    };
+
+    const play = () => {
+      if (reduce.matches) return;
+      clear();
+      demo.classList.remove("is-playing", "is-proof");
+      demo.classList.add("is-armed"); // snap to the "before" value
+      void demo.offsetWidth; // lock the armed state before transitioning
+
+      const ARM = 640; // beat to read the original file
+      const SETTLE = 360; // fold finishes, comments prove they held
+
+      timers.push(
+        setTimeout(() => {
+          demo.classList.remove("is-armed");
+          demo.classList.add("is-playing");
+        }, ARM),
+      );
+      timers.push(setTimeout(() => demo.classList.add("is-proof"), ARM + SETTLE));
+      timers.push(
+        setTimeout(() => demo.classList.remove("is-playing", "is-proof"), ARM + SETTLE + 1000),
+      );
+    };
+
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              play();
+              io.disconnect();
+            }
+          });
+        },
+        // -20% bottom margin holds the trigger until the demo is well past
+        // the fold, so the round-trip plays a beat later into the scroll.
+        { threshold: 0.55, rootMargin: "0px 0px -20% 0px" },
+      );
+      io.observe(demo);
+    } else {
+      play();
+    }
+
+    demo
+      .querySelector<HTMLButtonElement>("[data-fold-replay]")
+      ?.addEventListener("click", play);
+  }
 </script>

@@ -12,6 +12,7 @@
   --chive-chip:  oklch(0.68 0.105 145);
 
   --ink:         oklch(0.22 0.012 60);
+  --ink-press:   oklch(0.15 0.012 60);
   --ink-soft:    oklch(0.40 0.016 60);
   --eggshell:    oklch(0.971 0.010 85);
   --shell-deep:  oklch(0.940 0.014 85);
@@ -34,7 +35,7 @@
   --step-2:  clamp(1.56rem, 1.36rem + 1.00vw, 2.40rem);
   --step-3:  clamp(1.95rem, 1.60rem + 1.75vw, 3.40rem);
   --step-4:  clamp(2.44rem, 1.85rem + 2.95vw, 4.60rem);
-  --step-5:  clamp(2.90rem, 2.00rem + 4.50vw, 5.60rem);
+  --step-5:  clamp(2.90rem, 2.00rem + 4.50vw, 5.50rem);
 
   /* ---- space ---- */
   --space-2xs: clamp(0.5rem, 0.45rem + 0.25vw, 0.65rem);
@@ -152,7 +153,7 @@ img, svg { display: block; max-width: 100%; }
   color: var(--eggshell);
   box-shadow: 0 6px 0 -1px var(--yolk-deep);
 }
-.btn--primary:hover { background: #000; box-shadow: 0 9px 0 -1px var(--yolk-deep); color: var(--eggshell); }
+.btn--primary:hover { background: var(--ink-press); box-shadow: 0 9px 0 -1px var(--yolk-deep); color: var(--eggshell); }
 .btn--ghost {
   background: transparent;
   color: var(--ink);

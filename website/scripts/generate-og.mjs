@@ -220,7 +220,7 @@ body {
 .key { color: ${c.paprika}; filter: brightness(1.3) saturate(0.95); }
 .eq  { color: ${c.onSkilletSoft}; }
 .str { color: ${c.yolk}; }
-.edit { color: ${c.onSkilletSoft}; display: flex; align-items: center; gap: 12px; }
+.edit { color: ${c.onSkilletSoft}; display: flex; align-items: center; gap: 12px; font-size: 17px; }
 .edit .fn { color: #f0a23a; }
 .edit .str2 { color: ${c.yolk}; }
 .edit .arrow { color: ${c.chive}; font-weight: 700; }
@@ -235,7 +235,7 @@ body {
   <div class="grid">
     <div class="left">
       <div class="brand">${logo}<span class="word">tomlet</span></div>
-      <div class="kicker">round-tripping TOML 1.0 · for Gleam</div>
+      <div class="kicker">TOML + omelette · round-trips TOML 1.1</div>
       <h1 class="headline">TOML that keeps<br/>your <span class="hl">comments.</span></h1>
       <div class="install"><span class="p">$</span> gleam add tomlet</div>
     </div>
@@ -243,14 +243,14 @@ body {
     <div class="card">
       <div class="card__bar">
         <div class="dots"><i style="background:#e5694a"></i><i style="background:#f6c83b"></i><i style="background:#7faa55"></i></div>
-        <span class="card__name">config.toml</span>
+        <span class="card__name">gleam.toml</span>
         <span class="card__chip"><b></b>comments preserved</span>
       </div>
-      <div class="code"><span class="row kept com"># the user's favorite snack</span>
-<span class="row"><span class="key">snack</span> <span class="eq">=</span> <span class="str">"tomato"</span></span>
-<div class="sep"></div><div class="edit"><span class="arrow">→</span><span><span class="fn">tomlet.set_string</span>(doc, …)</span></div>
-<div class="sep"></div><span class="row kept com"># the user's favorite snack</span>
-<span class="row"><span class="key">snack</span> <span class="eq">=</span> <span class="str">"tomato sandwich"</span></span></div>
+      <div class="code"><span class="row kept com"># published to Hex on each tag</span>
+<span class="row"><span class="key">version</span> <span class="eq">=</span> <span class="str">"1.2.0"</span></span>
+<div class="sep"></div><div class="edit"><span class="arrow">→</span><span><span class="fn">tomlet.set_string</span>(doc, ["version"], …)</span></div>
+<div class="sep"></div><span class="row kept com"># published to Hex on each tag</span>
+<span class="row"><span class="key">version</span> <span class="eq">=</span> <span class="str">"1.3.0"</span></span></div>
     </div>
   </div>
   <div class="frame"></div>
