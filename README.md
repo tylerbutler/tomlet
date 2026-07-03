@@ -101,6 +101,39 @@ Parse errors use stable variants for machine handling. `InvalidSyntax` and
 `DuplicateKey` carry byte offsets; use `tomlet.line_column(input, offset)` when
 displaying diagnostics to users.
 
+## Dynamic decoding
+
+Use `parse_dynamic` or `decode` when you want to reuse
+`gleam/dynamic/decode` decoders instead of reading values manually. Tables and
+inline tables become property maps, arrays and arrays of tables become lists,
+date/time values become strings containing their TOML lexical form, and special
+floats become `"inf"`, `"-inf"`, or `"nan"`.
+
+```gleam
+import gleam/dynamic/decode
+import tomlet
+
+let package_decoder = {
+  use name <- decode.field("name", decode.string)
+  use released <- decode.field("released", tomlet.datetime_decoder())
+  decode.success(#(name, released))
+}
+
+case tomlet.decode(
+  "name = \"tomlet\"\nreleased = 1979-05-27T07:32:00Z\n",
+  package_decoder,
+) {
+  Ok(#(name, released)) -> #(
+    name,
+    tomlet.datetime_to_string(released),
+  )
+  Error(error) -> handle_decode_error(error)
+}
+```
+
+`date_decoder`, `time_decoder`, and `datetime_decoder` decode those lexical
+strings back into Tomlet's opaque date/time types.
+
 ## TOML version
 
 `tomlet.parse` and `tomlet.parse_bytes` accept TOML 1.1 by default. The 1.1
