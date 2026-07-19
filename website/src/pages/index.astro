@@ -6,6 +6,7 @@ import { Event } from "astro-tinylytics";
 
 const repo = "https://github.com/tylerbutler/tomlet";
 const docs = "https://hexdocs.pm/tomlet/";
+const decodeDocs = `${docs}tomlet.html#decode`;
 const hex = "https://hex.pm/packages/tomlet";
 
 const keep = (s: string, kind = "kept") => {
@@ -54,6 +55,28 @@ const typedAccess =
 
 <span class="t-com">// nested keys use the same path syntax</span>
 <span class="t-kw">use</span> name <span class="t-eq">&lt;-</span> <span class="t-mod">result</span>.<span class="t-fn">try</span>(<span class="t-mod">tomlet</span>.<span class="t-fn">get_string</span>(doc, [<span class="t-str">"pkg"</span>, <span class="t-str">"name"</span>]))`;
+
+const decoderToml =
+`<span class="t-key">name</span> <span class="t-eq">=</span> <span class="t-str">"tomlet"</span>
+<span class="t-key">released</span> <span class="t-eq">=</span> <span class="t-num">1979-05-27T07:32:00Z</span>
+<span class="t-key">targets</span> <span class="t-eq">=</span> [<span class="t-str">"erlang"</span>, <span class="t-str">"javascript"</span>]`;
+
+const decoderApi =
+`<span class="t-kw">import</span> <span class="t-mod">gleam/dynamic/decode</span>
+<span class="t-kw">import</span> <span class="t-mod">tomlet</span>
+
+<span class="t-kw">let</span> package_decoder = {
+  <span class="t-kw">use</span> name <span class="t-eq">&lt;-</span> <span class="t-mod">decode</span>.<span class="t-fn">field</span>(<span class="t-str">"name"</span>, <span class="t-mod">decode</span>.<span class="t-fn">string</span>)
+  <span class="t-kw">use</span> released <span class="t-eq">&lt;-</span> <span class="t-mod">decode</span>.<span class="t-fn">field</span>(
+    <span class="t-str">"released"</span>, <span class="t-mod">tomlet</span>.<span class="t-fn">datetime_decoder</span>(),
+  )
+  <span class="t-kw">use</span> targets <span class="t-eq">&lt;-</span> <span class="t-mod">decode</span>.<span class="t-fn">field</span>(
+    <span class="t-str">"targets"</span>, <span class="t-mod">decode</span>.<span class="t-fn">list</span>(<span class="t-mod">decode</span>.<span class="t-fn">string</span>),
+  )
+  <span class="t-mod">decode</span>.<span class="t-fn">success</span>(#(name, released, targets))
+}
+
+<span class="t-mod">tomlet</span>.<span class="t-fn">decode</span>(input, package_decoder)`;
 ---
 
 <Layout>
@@ -70,6 +93,7 @@ const typedAccess =
       <nav class="nav__links" aria-label="Primary">
         <a href="#how">How it works</a>
         <a href="#ingredients">Ingredients</a>
+        <a href="#decode">Decode</a>
         <a href={docs}>Docs</a>
         <a class="nav__gh" href={repo} aria-label="tomlet on GitHub">
           <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -120,6 +144,7 @@ const typedAccess =
             <li>TOML&nbsp;1.1 by default,<span>strict 1.0 on request</span></li>
             <li>Same Gleam on Erlang &amp; JS</li>
             <li>Comments, order &amp; CRLF survive every write</li>
+            <li>Dynamic decoders for app config</li>
           </ul>
         </div>
 
@@ -257,6 +282,40 @@ const typedAccess =
         </div>
 
         <CodePanel label="typed access" lang="gleam" class="taste__panel" code={typedAccess} />
+      </div>
+    </section>
+
+    <!-- ============ DECODER API ============ -->
+    <section class="section decode" id="decode">
+      <div class="wrap decode__inner">
+        <div class="decode__copy flow">
+          <h2>Decode the whole file<br />into your own shape.</h2>
+          <p class="measure">
+            Manual accessors are perfect for a surgical read. When the TOML is
+            your app config, package metadata, or release input, hand tomlet a
+            <code>gleam/dynamic/decode</code> decoder and get back the structure
+            your program already wants.
+          </p>
+          <p class="decode__note">
+            Tables decode as fields, arrays as lists, and TOML dates and times
+            stay precise through <code>tomlet.date_decoder</code>,
+            <code>tomlet.time_decoder</code>, and
+            <code>tomlet.datetime_decoder</code>.
+          </p>
+          <div class="decode__links">
+            <Event name="docs.decode" as="a" class="btn btn--primary" href={decodeDocs}>Read decoder docs</Event>
+            <Event name="docs.read" as="a" class="btn btn--ghost" href={docs}>All API docs</Event>
+          </div>
+        </div>
+
+        <div class="decode__demo" aria-label="A TOML file decoded with a Gleam dynamic decoder">
+          <CodePanel label="app.toml" lang="toml" class="decode__panel decode__panel--toml" code={decoderToml} />
+          <div class="decode__spoon" aria-hidden="true">
+            <span>tomlet.decode</span>
+            <span>→</span>
+          </div>
+          <CodePanel label="dynamic decoder" lang="gleam" class="decode__panel decode__panel--gleam" code={decoderApi} />
+        </div>
       </div>
     </section>
 
@@ -685,6 +744,78 @@ const typedAccess =
   .taste__copy p { color: var(--ink-soft); font-size: var(--step-1); }
   .taste__copy code { font-family: var(--font-mono); font-size: 0.9em; color: var(--paprika-ink); }
   .taste__links { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.7rem; }
+
+  /* ---------- DECODER ---------- */
+  .decode {
+    background:
+      radial-gradient(80% 70% at 88% 4%, oklch(0.80 0.158 78 / 0.38), transparent 68%),
+      linear-gradient(180deg, var(--shell-deep) 0%, var(--eggshell) 100%);
+    overflow: hidden;
+  }
+  .decode__inner {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: clamp(2.2rem, 5vw, 4rem);
+    align-items: center;
+  }
+  @media (min-width: 980px) {
+    .decode__inner { grid-template-columns: 0.82fr 1.18fr; }
+  }
+  .decode__copy h2 { margin-bottom: 0.3rem; }
+  .decode__copy p { color: var(--ink-soft); font-size: var(--step-1); }
+  .decode__copy code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    color: var(--paprika-ink);
+  }
+  .decode__note {
+    border-top: 1px solid var(--shell-line);
+    padding-top: clamp(1rem, 2vw, 1.35rem);
+    max-width: 42rem;
+  }
+  .decode__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 1.7rem;
+  }
+  .decode__demo {
+    position: relative;
+    display: grid;
+    gap: 0.9rem;
+    min-width: 0;
+  }
+  .decode__spoon {
+    justify-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: max-content;
+    max-width: 100%;
+    padding: 0.42rem 0.82rem;
+    border: 1.5px solid var(--ink);
+    border-radius: var(--radius-pill);
+    background: var(--yolk);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    box-shadow: 0 8px 0 -5px var(--yolk-deep);
+  }
+  @media (min-width: 760px) {
+    .decode__demo { gap: 0; }
+    .decode__panel--toml { width: min(76%, 31rem); }
+    .decode__spoon {
+      position: relative;
+      z-index: 2;
+      margin-block: -0.15rem -0.2rem;
+      transform: translateX(-9%);
+    }
+    .decode__panel--gleam {
+      width: min(93%, 45rem);
+      justify-self: end;
+    }
+  }
 
   /* ---------- WHY ---------- */
   .why { background: var(--ink); color: var(--eggshell); }
