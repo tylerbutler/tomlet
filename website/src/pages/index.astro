@@ -85,15 +85,15 @@ const decoderApi =
     <div class="wrap nav__inner">
       <a class="nav__brand" href="#top" aria-label="tomlet — home">
         <picture class="nav__logo">
-          <source srcset="/tomlet-logo.webp" type="image/webp" />
-          <img src="/tomlet-logo.png" width="720" height="385" alt="" decoding="async" />
+          <source srcset="/tomlet-logo-400.webp" type="image/webp" />
+          <img src="/tomlet-logo-400.png" width="400" height="214" alt="" decoding="async" />
         </picture>
         <span class="nav__word">tomlet</span>
       </a>
       <nav class="nav__links" aria-label="Primary">
-        <a class="nav__scroll" href="#how">How it works</a>
-        <a class="nav__scroll" href="#ingredients">Ingredients</a>
-        <a class="nav__scroll" href="#decode">Decode</a>
+        <a href="#how">How it works</a>
+        <a href="#ingredients">Ingredients</a>
+        <a href="#decode">Decode</a>
         <a href={docs}>Docs</a>
         <a class="nav__gh" href={repo} aria-label="tomlet on GitHub">
           <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
@@ -109,17 +109,17 @@ const decoderApi =
       <div class="wrap hero__inner">
         <div class="hero__copy reveal">
           <picture class="hero__mark">
-            <source srcset="/tomlet-logo.webp" type="image/webp" />
+            <source srcset="/tomlet-logo-400.webp" type="image/webp" />
             <img
-              src="/tomlet-logo.png"
-              width="720"
-              height="385"
+              src="/tomlet-logo-400.png"
+              width="400"
+              height="214"
               alt="The tomlet logomark: a folded golden omelette dotted with diced paprika"
               decoding="async"
               fetchpriority="high"
             />
           </picture>
-          <p class="hero__kicker"><span>TOML&nbsp;+&nbsp;omelette</span> · a tidy little parser for Gleam</p>
+          <p class="hero__kicker"><span>TOML&nbsp;+&nbsp;omelette</span> <span class="hero__kicker-tail">· a tidy little parser for Gleam</span></p>
           <h1 class="hero__title">TOML that<br />keeps your<br /><span class="hero__under">comments.</span></h1>
           <p class="hero__lede">
             tomlet parses TOML 1.1 into a document that remembers every comment,
@@ -366,8 +366,8 @@ const decoderApi =
       <div class="foot__brand">
         <a class="foot__mark" href="#top" aria-label="tomlet — back to top">
           <picture class="foot__logo">
-            <source srcset="/tomlet-logo.webp" type="image/webp" />
-            <img src="/tomlet-logo.png" width="720" height="385" alt="" decoding="async" />
+            <source srcset="/tomlet-logo-400.webp" type="image/webp" />
+            <img src="/tomlet-logo-400.png" width="400" height="214" alt="" decoding="async" />
           </picture>
           <span>tomlet</span>
         </a>
@@ -419,13 +419,22 @@ const decoderApi =
   .nav__logo { display: flex; flex: none; }
   .nav__logo img { height: 1.9rem; width: auto; display: block; }
   .nav__word { font-weight: 760; font-size: 1.3rem; letter-spacing: -0.04em; }
-  .nav__links { display: flex; align-items: center; gap: clamp(0.9rem, 2vw, 1.7rem); }
-  .nav__links a { color: var(--ink); text-decoration: none; font-weight: 520; font-size: 0.98rem; }
+  .nav__links { display: flex; align-items: center; gap: clamp(0.65rem, 2.4vw, 1.7rem); }
+  .nav__links a {
+    display: inline-flex; align-items: center;
+    color: var(--ink); text-decoration: none; font-weight: 520;
+    font-size: clamp(0.88rem, 0.8rem + 0.4vw, 0.98rem);
+    white-space: nowrap;
+    padding-block: 0.9rem; /* ≥44px hit height inside the 4.1rem bar */
+  }
   .nav__links a:hover { color: var(--paprika-ink); }
-  .nav__scroll { display: none; }
   .nav__gh { display: inline-flex; position: relative; }
   .nav__gh::before { content: ""; position: absolute; inset: -12px; }
-  @media (min-width: 720px) { .nav__scroll { display: inline; } }
+  @media (max-width: 559px) { .nav__word { display: none; } }
+  @media (max-width: 379px) {
+    .nav__links { gap: 0.55rem; }
+    .nav__links a { font-size: 0.84rem; }
+  }
 
   /* ---------- HERO ---------- */
   .hero { position: relative; padding-block: clamp(2.5rem, 1rem + 7vw, 6rem) clamp(3rem, 1rem + 8vw, 7rem); overflow: hidden; }
@@ -464,13 +473,15 @@ const decoderApi =
     font-family: var(--font-mono); font-size: 0.82rem; font-weight: 500;
     color: var(--ink-soft); margin-bottom: 1.1rem; letter-spacing: -0.01em;
   }
-  .hero__kicker span {
+  .hero__kicker span:first-child {
     background: var(--ink); color: var(--yolk);
     padding: 0.2em 0.6em; border-radius: var(--radius-pill); margin-right: 0.4em;
     font-weight: 600;
   }
+  /* the tail drops to its own line as a unit instead of wrapping mid-phrase */
+  .hero__kicker-tail { display: inline-block; }
   .hero__title {
-    font-size: var(--step-5); line-height: 0.96; letter-spacing: -0.03em;
+    font-size: var(--step-5); line-height: 0.96; letter-spacing: -0.04em;
     margin-bottom: 1.3rem;
   }
   .hero__under { position: relative; white-space: nowrap; }
@@ -954,13 +965,17 @@ const decoderApi =
     };
 
     if ("IntersectionObserver" in window) {
+      let played = false;
+      const playOnce = () => {
+        if (played) return;
+        played = true;
+        io.disconnect();
+        play();
+      };
       const io = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              play();
-              io.disconnect();
-            }
+            if (entry.isIntersecting) playOnce();
           });
         },
         // -20% bottom margin holds the trigger until the demo is well past
@@ -968,6 +983,17 @@ const decoderApi =
         { threshold: 0.55, rootMargin: "0px 0px -20% 0px" },
       );
       io.observe(demo);
+
+      // A desktop visitor who never scrolls can leave the demo partially
+      // visible but under the observer's threshold forever — and the resting
+      // state already shows the edit applied, so the proof would be skipped.
+      // If most of the demo is on screen at load, run it once after a beat.
+      const rect = demo.getBoundingClientRect();
+      const visible =
+        Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+      if (rect.height > 0 && visible / rect.height >= 0.35) {
+        setTimeout(playOnce, 900);
+      }
     } else {
       play();
     }
