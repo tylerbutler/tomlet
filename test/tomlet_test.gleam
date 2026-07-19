@@ -1,3 +1,4 @@
+import gleam/dynamic/decode
 import gleeunit
 import tomlet
 
@@ -171,6 +172,132 @@ pub fn get_returns_public_standard_table_values_test() {
         #(["name"], tomlet.StringValue("tomato")),
         #(["version"], tomlet.StringValue("0.1.0")),
       ]),
+    )
+}
+
+pub fn parse_dynamic_decodes_scalar_values_test() {
+  let input =
+    "name = \"tomlet\"
+answer = 42
+enabled = true
+ratio = 3.14
+limit = inf
+released = 1979-05-27T07:32:00Z
+"
+  let assert Ok(data) = tomlet.parse_dynamic(input)
+
+  assert decode.run(data, decode.at(["name"], decode.string)) == Ok("tomlet")
+  assert decode.run(data, decode.at(["answer"], decode.int)) == Ok(42)
+  assert decode.run(data, decode.at(["enabled"], decode.bool)) == Ok(True)
+  assert decode.run(data, decode.at(["ratio"], decode.float)) == Ok(3.14)
+  assert decode.run(data, decode.at(["limit"], decode.string)) == Ok("inf")
+
+  let assert Ok(released) =
+    decode.run(data, decode.at(["released"], tomlet.datetime_decoder()))
+  assert tomlet.datetime_to_string(released) == "1979-05-27T07:32:00Z"
+}
+
+pub fn to_dynamic_converts_existing_document_test() {
+  let assert Ok(doc) = tomlet.parse("name = \"tomlet\"\n")
+  let data = tomlet.to_dynamic(doc)
+
+  assert decode.run(data, decode.at(["name"], decode.string)) == Ok("tomlet")
+}
+
+pub fn parse_dynamic_with_respects_toml_version_test() {
+  assert tomlet.parse_dynamic_with("time = 07:32\n", tomlet.Toml10)
+    == Error(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7))
+}
+
+pub fn parse_dynamic_decodes_nested_tables_and_arrays_test() {
+  let input =
+    "[package]
+name = \"tomlet\"
+metadata.downloads = 42
+tags = [\"config\", \"toml\"]
+
+[[packages]]
+name = \"one\"
+
+[[packages]]
+name = \"two\"
+"
+  let assert Ok(data) = tomlet.parse_dynamic(input)
+
+  assert decode.run(
+      data,
+      decode.at(["package", "metadata", "downloads"], decode.int),
+    )
+    == Ok(42)
+  assert decode.run(
+      data,
+      decode.at(["package", "tags"], decode.list(of: decode.string)),
+    )
+    == Ok(["config", "toml"])
+  assert decode.run(
+      data,
+      decode.at(
+        ["packages"],
+        decode.list(of: decode.at(["name"], decode.string)),
+      ),
+    )
+    == Ok(["one", "two"])
+}
+
+pub fn decode_runs_decoder_against_parsed_toml_test() {
+  let input = "name = \"tomlet\"\nreleased = 1979-05-27T07:32:00Z\n"
+  let decoder = {
+    use name <- decode.field("name", decode.string)
+    use released <- decode.field("released", tomlet.datetime_decoder())
+    decode.success(#(name, released))
+  }
+
+  let assert Ok(#("tomlet", released)) = tomlet.decode(input, decoder)
+  assert tomlet.datetime_to_string(released) == "1979-05-27T07:32:00Z"
+}
+
+pub fn decode_with_respects_toml_version_test() {
+  assert tomlet.decode_with(
+      "time = 07:32\n",
+      tomlet.Toml10,
+      decode.at(["time"], decode.string),
+    )
+    == Error(
+      tomlet.DecodeParseError(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7)),
+    )
+}
+
+pub fn decode_wraps_parse_errors_test() {
+  assert tomlet.decode("name = \n", decode.string)
+    == Error(
+      tomlet.DecodeParseError(tomlet.InvalidSyntax(tomlet.ExpectedValue, 7)),
+    )
+}
+
+pub fn date_and_time_decoders_decode_lexical_strings_test() {
+  let input = "released = 1979-05-27\nalarm = 07:32:00\n"
+  let decoder = {
+    use released <- decode.field("released", tomlet.date_decoder())
+    use alarm <- decode.field("alarm", tomlet.time_decoder())
+    decode.success(#(released, alarm))
+  }
+
+  let assert Ok(#(released, alarm)) = tomlet.decode(input, decoder)
+  assert tomlet.date_to_string(released) == "1979-05-27"
+  assert tomlet.time_to_string(alarm) == "07:32:00"
+}
+
+pub fn datetime_decoder_reports_decode_errors_test() {
+  let assert Error(tomlet.DecodeDynamicError([
+    decode.DecodeError(
+      expected: "DateTime",
+      found: "String",
+      path: ["released"],
+    ),
+  ])) =
+    tomlet.decode(
+      "released = \"not-a-date-time\"\n",
+      decode.at(["released"], tomlet.datetime_decoder()),
     )
 }
 

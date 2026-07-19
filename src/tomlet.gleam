@@ -6,6 +6,8 @@
 
 import gleam/bit_array
 import gleam/bool
+import gleam/dynamic
+import gleam/dynamic/decode as dynamic_decode
 import gleam/float
 import gleam/int
 import gleam/list
@@ -48,6 +50,15 @@ pub type ParseError {
 
   /// A key was defined more than once.
   DuplicateKey(key: List(String), offset: Int)
+}
+
+/// Errors that can occur while parsing TOML and decoding it with a dynamic decoder.
+pub type DecodeError {
+  /// The input could not be parsed as TOML.
+  DecodeParseError(ParseError)
+
+  /// The input parsed successfully, but the supplied decoder did not match the data.
+  DecodeDynamicError(List(dynamic_decode.DecodeError))
 }
 
 /// Stable categories for TOML syntax errors.
@@ -315,6 +326,55 @@ pub fn parse_with(
   version: TomlVersion,
 ) -> Result(Document, ParseError) {
   parse_string_with(input, version)
+}
+
+/// Parse TOML 1.1 text into decoder-friendly dynamic data.
+///
+/// Tables and inline tables become property maps, arrays and arrays of tables
+/// become dynamic lists, scalar values become their matching dynamic scalar, and
+/// date/time values keep their TOML lexical form as strings.
+pub fn parse_dynamic(input: String) -> Result(dynamic.Dynamic, ParseError) {
+  parse_dynamic_with(input, Toml11)
+}
+
+/// Parse TOML text against the given language version into decoder-friendly
+/// dynamic data.
+pub fn parse_dynamic_with(
+  input: String,
+  version: TomlVersion,
+) -> Result(dynamic.Dynamic, ParseError) {
+  use doc <- result.try(parse_with(input, version))
+  Ok(to_dynamic(doc))
+}
+
+/// Parse TOML 1.1 text and run a dynamic decoder against it.
+///
+/// This is a convenience wrapper around `parse_dynamic` and
+/// `gleam/dynamic/decode.run`.
+pub fn decode(
+  input: String,
+  decoder: dynamic_decode.Decoder(a),
+) -> Result(a, DecodeError) {
+  use data <- result.try(
+    parse_dynamic(input) |> result.map_error(DecodeParseError),
+  )
+  dynamic_decode.run(data, decoder)
+  |> result.map_error(DecodeDynamicError)
+}
+
+/// Parse TOML text against the given language version and run a dynamic decoder
+/// against it.
+pub fn decode_with(
+  input: String,
+  version: TomlVersion,
+  decoder: dynamic_decode.Decoder(a),
+) -> Result(a, DecodeError) {
+  use data <- result.try(
+    parse_dynamic_with(input, version)
+    |> result.map_error(DecodeParseError),
+  )
+  dynamic_decode.run(data, decoder)
+  |> result.map_error(DecodeDynamicError)
 }
 
 /// Parse a standalone TOML value literal.
@@ -664,6 +724,16 @@ pub fn to_string(doc: Document) -> String {
   }
 }
 
+/// Convert a parsed document to decoder-friendly dynamic data.
+///
+/// The dynamic shape is intentionally JSON-like: tables are property maps,
+/// arrays are lists, dates/times are strings, and special floats are represented
+/// by their TOML literals (`"inf"`, `"-inf"`, and `"nan"`).
+pub fn to_dynamic(doc: Document) -> dynamic.Dynamic {
+  root_dynamic_entries(doc)
+  |> dynamic.properties
+}
+
 // Replace the document's root and clear the cached original source so the next
 // `to_string` re-emits from the (now-edited) AST. Every edit must produce its
 // result through this helper; relying on each mutator to remember to clear the
@@ -907,6 +977,53 @@ pub fn as_datetime(value: Value) -> Result(DateTime, GetError) {
   }
 }
 
+/// Decode a dynamic string into a TOML local date.
+pub fn date_decoder() -> dynamic_decode.Decoder(Date) {
+  dynamic_decode.string
+  |> dynamic_decode.then(fn(text) {
+    case date_from_string(text) {
+      Ok(date) -> dynamic_decode.success(date)
+      Error(error) -> failed_date_decoder(error)
+    }
+  })
+}
+
+/// Decode a dynamic string into a TOML local time.
+pub fn time_decoder() -> dynamic_decode.Decoder(Time) {
+  dynamic_decode.string
+  |> dynamic_decode.then(fn(text) {
+    case time_from_string(text) {
+      Ok(time) -> dynamic_decode.success(time)
+      Error(error) -> failed_time_decoder(error)
+    }
+  })
+}
+
+/// Decode a dynamic string into a TOML date-time.
+pub fn datetime_decoder() -> dynamic_decode.Decoder(DateTime) {
+  dynamic_decode.string
+  |> dynamic_decode.then(fn(text) {
+    case datetime_from_string(text) {
+      Ok(datetime) -> dynamic_decode.success(datetime)
+      Error(error) -> failed_datetime_decoder(error)
+    }
+  })
+}
+
+fn failed_date_decoder(_error: FormatError) -> dynamic_decode.Decoder(Date) {
+  dynamic_decode.failure(Date(""), expected: "Date")
+}
+
+fn failed_time_decoder(_error: FormatError) -> dynamic_decode.Decoder(Time) {
+  dynamic_decode.failure(Time(""), expected: "Time")
+}
+
+fn failed_datetime_decoder(
+  _error: FormatError,
+) -> dynamic_decode.Decoder(DateTime) {
+  dynamic_decode.failure(DateTime(""), expected: "DateTime")
+}
+
 /// Descend into a `Value` by key path without returning to the document root.
 ///
 /// Table-shaped values are descended by key; arrays and arrays of tables are
@@ -1042,6 +1159,117 @@ fn public_table_entries(table: ast.Table) -> List(#(List(String), Value)) {
   let ast.Table(entries: entries, header: _) = table
   let #(table_entries, _) = collect_table_entries(entries, [], [], True, [])
   table_entries
+}
+
+fn dynamic_value(value: Value) -> dynamic.Dynamic {
+  case value {
+    StringValue(text) -> dynamic.string(text)
+    IntValue(number) -> dynamic.int(number)
+    FloatValue(number) -> dynamic.float(number)
+    SpecialFloatValue(special) ->
+      dynamic.string(special_float_to_string(special))
+    BoolValue(boolean) -> dynamic.bool(boolean)
+    DateValue(date) -> dynamic.string(date_to_string(date))
+    TimeValue(time) -> dynamic.string(time_to_string(time))
+    DateTimeValue(datetime) -> dynamic.string(datetime_to_string(datetime))
+    ArrayValue(items) -> dynamic.list(list.map(items, dynamic_value))
+    InlineTableValue(entries) -> dynamic_table(entries)
+    StandardTableValue(entries) -> dynamic_table(entries)
+    ArrayOfTablesValue(tables) -> dynamic.list(list.map(tables, dynamic_table))
+  }
+}
+
+fn dynamic_table(entries: List(#(List(String), Value))) -> dynamic.Dynamic {
+  entries
+  |> dynamic_table_entries
+  |> dynamic.properties
+}
+
+fn dynamic_table_entries(
+  entries: List(#(List(String), Value)),
+) -> List(#(dynamic.Dynamic, dynamic.Dynamic)) {
+  entries
+  |> top_level_keys
+  |> list.map(fn(key) {
+    #(dynamic.string(key), dynamic_table_entry_value(entries, key))
+  })
+}
+
+fn dynamic_table_entry_value(
+  entries: List(#(List(String), Value)),
+  key: String,
+) -> dynamic.Dynamic {
+  let matching =
+    entries
+    |> list.filter_map(fn(entry) {
+      case entry {
+        #([first, ..rest], value) if first == key -> Ok(#(rest, value))
+        _ -> Error(Nil)
+      }
+    })
+  case matching {
+    [#([], value)] -> dynamic_value(value)
+    _ -> dynamic_table(matching)
+  }
+}
+
+fn special_float_to_string(value: SpecialFloat) -> String {
+  case value {
+    PositiveInfinity -> "inf"
+    NegativeInfinity -> "-inf"
+    NotANumber -> "nan"
+  }
+}
+
+fn root_dynamic_entries(
+  doc: Document,
+) -> List(#(dynamic.Dynamic, dynamic.Dynamic)) {
+  let Document(root: ast.Table(entries: entries, ..), ..) = doc
+
+  entries
+  |> root_top_level_keys([], [])
+  |> list.map(fn(key) {
+    let dynamic_value = case get(doc, [key]) {
+      Ok(value) -> dynamic_value(value)
+      Error(KeyNotFound(_)) -> dynamic_table([])
+      Error(WrongType(_, _)) -> dynamic_table([])
+    }
+    #(dynamic.string(key), dynamic_value)
+  })
+}
+
+fn root_top_level_keys(
+  entries: List(ast.Entry),
+  active_table: List(String),
+  collected: List(String),
+) -> List(String) {
+  case entries {
+    [] -> list.reverse(collected)
+    [entry, ..rest] -> {
+      let next_active_table = case entry {
+        ast.TableHeader(header) -> header_key(header)
+        _ -> active_table
+      }
+      let maybe_key = case entry {
+        ast.KeyValue(key: key, ..) ->
+          active_table
+          |> list.append(key_to_strings(key))
+          |> list.first
+        ast.TableHeader(header) -> header_key(header) |> list.first
+        _ -> Error(Nil)
+      }
+      let next_collected = case maybe_key {
+        Ok(key) -> prepend_unique(collected, key)
+        Error(Nil) -> collected
+      }
+      root_top_level_keys(rest, next_active_table, next_collected)
+    }
+  }
+}
+
+fn prepend_unique(items: List(String), item: String) -> List(String) {
+  use <- bool.guard(when: list.contains(items, item), return: items)
+  [item, ..items]
 }
 
 fn entry_defines_target_table(entry: ast.Entry, target: List(String)) -> Bool {
