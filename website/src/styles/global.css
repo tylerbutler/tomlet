@@ -112,6 +112,21 @@ img, svg { display: block; max-width: 100%; }
 .section { padding-block: var(--space-2xl); }
 .flow > * + * { margin-block-start: var(--space-s); }
 
+.skip-link {
+  position: fixed;
+  top: 0.6rem; left: 0.6rem;
+  z-index: var(--z-overlay);
+  background: var(--ink); color: var(--eggshell);
+  font-weight: 640; font-size: 0.95rem;
+  padding: 0.7em 1.2em; border-radius: var(--radius-pill);
+  text-decoration: none;
+  transform: translateY(calc(-100% - 1.2rem));
+}
+.skip-link:focus-visible {
+  transform: none;
+  color: var(--eggshell);
+}
+
 .sr-only {
   position: absolute;
   width: 1px; height: 1px;
