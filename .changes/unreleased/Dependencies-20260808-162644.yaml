@@ -1,0 +1,3 @@
+kind: Dependencies
+body: Pin gleam to 1.18.1 and update locked dependency versions.
+time: 2026-08-08T16:26:44.220722463-07:00
