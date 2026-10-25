@@ -8,7 +8,8 @@ This guide is for people contributing to Tomlet. For library usage, see
 - Gleam
 - Python 3, for TOML corpus test generation
 - [`just`](https://github.com/casey/just), for common project tasks
-- [`changie`](https://changie.dev/), for changelog fragments
+- [`trellis`](https://trellis.tylerbutler.com/), for changelog fragments and releases
+  (pinned in `.mise.toml`)
 
 ## Common tasks
 
@@ -78,21 +79,37 @@ When reviewing API changes, preserve this contract:
 
 ## Changelog entries
 
-User-facing changes should include a Changie fragment:
+User-facing changes should include a trellis changelog fragment:
 
 ```sh
-just change
+just change Fixed "Reject dates with a zero month"
+# or: trellis changelog new --kind Fixed --body "..."
 ```
 
-Fragments belong in `.changes/unreleased/`. Use the configured kind labels from
-`.changie.yaml`, and write entries for users of the package rather than for
-maintainers reading the diff.
+Fragments are TOML files in `.changes/unreleased/`. Use one of the trellis
+default kinds (`Breaking`, `Removed`, `Added`, `Changed`, `Deprecated`, `Fixed`,
+`Performance`, `Security`, `Dependencies`). The kind sets the version bump. Write
+entries for users of the package rather than for maintainers reading the diff.
 
-Preview unreleased notes with:
+Preview the next version with:
 
 ```sh
 just changelog-preview
 ```
+
+`CHANGELOG.md` is generated from the version sections in `.changes/tomlet/`. Do
+not edit it directly.
+
+## Releases
+
+Releases are automated with trellis:
+
+1. On each push to `main`, `trellis release pr` opens or updates a
+   `release/pending` PR that bumps the version and updates `CHANGELOG.md`.
+2. When that PR merges, `trellis tag create --github-release` creates the
+   `vX.Y.Z` tag and GitHub Release.
+3. The tag push runs `trellis publish --tag`, which publishes to Hex, and
+   attaches an SBOM to the Release.
 
 ## Before opening a PR
 

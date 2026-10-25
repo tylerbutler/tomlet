@@ -42,3 +42,34 @@ label_possible = "off"
   "assert_ok_pattern",
   "missing_type_annotation",
 ]
+
+[tools.trellis]
+# Members are auto-discovered: the root package and examples/*.
+
+[tools.trellis.exclude]
+# glinter is a dev dependency of the root package only.
+lint = ["examples/*"]
+
+[tools.trellis.tasks.lint]
+command = "gleam run -m glinter"
+needs_deps = true
+
+[tools.trellis.changelog]
+# The root package owns every file, so CI-only or docs-only PRs would
+# otherwise need a fragment. Report missing entries without failing.
+strictness = "warn"
+# Keep the CHANGELOG.md preamble used before trellis.
+header_format = """# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)."""
+
+[tools.trellis.publish]
+# Keep the v1.2.3 tag style used before trellis.
+exact_tag_format = "v{version}"
+
+[tools.trellis.publish.lifecycle.packages]
+# Examples are never versioned, tagged, or published.
+"examples/*" = "workspace"
