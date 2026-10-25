@@ -1,4 +1,4 @@
-name: Changie Release
+name: Release PR
 
 on:
   push:
@@ -19,31 +19,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
         with:
           token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
 
-      - uses: tylerbutler/actions/changie-release@ed7d5e5f1d4370a5ccf06503916e3c301102ab1c # ratchet:tylerbutler/actions/changie-release@main
-        id: release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          pr-title-template: "chore: release {version}"
-          version-files: |
-            gleam.toml:version
+      - name: Setup trellis
+        uses: ./.github/actions/setup-trellis
 
-      - name: Summary
-        if: steps.release.outputs.skipped != 'true'
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Regenerates the release/pending branch and PR from pending fragments.
+      # A no-op when .changes/unreleased/ has no fragments.
+      - name: Create or update release PR
         env:
-          VERSION: ${{ steps.release.outputs.version }}
-          PR_URL: ${{ steps.release.outputs.pr-url }}
-          PR_OP: ${{ steps.release.outputs.pr-operation }}
-        run: |
-          echo "### Release PR Created" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Version:** $VERSION" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **PR:** $PR_URL" >> "$GITHUB_STEP_SUMMARY"
-          echo "- **Operation:** $PR_OP" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Skipped
-        if: steps.release.outputs.skipped == 'true'
-        run: |
-          echo "### Release Skipped" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "No unreleased change fragments found." >> "$GITHUB_STEP_SUMMARY"
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: trellis release pr

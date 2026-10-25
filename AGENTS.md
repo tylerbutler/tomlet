@@ -70,5 +70,6 @@ byte-for-byte unless explicitly listed in `ROUNDTRIP_UNSUPPORTED`.
   `InlineTableInsertUnsupported`.
 - Parse byte input with `parse_bytes` when UTF-8 or BOM validation matters.
   Invalid byte encodings should be rejected with `InvalidEncoding`.
-- User-facing changes should include a Changie fragment in `.changes/unreleased/`
-  using the labels configured in `.changie.yaml`.
+- User-facing changes should include a trellis changelog fragment in
+  `.changes/unreleased/` (`trellis changelog new --kind <kind> --body <text>`).
+  Do not edit `CHANGELOG.md` by hand; trellis generates it.

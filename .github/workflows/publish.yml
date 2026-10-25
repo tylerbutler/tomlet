@@ -17,8 +17,12 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup
 
+      - name: Setup trellis
+        uses: ./.github/actions/setup-trellis
+
+      # Skips versions already on Hex, so a re-run after a partial failure is safe.
       - name: Publish to Hex.pm
-        run: gleam publish --yes
+        run: trellis publish --tag "$GITHUB_REF_NAME"
         env:
           HEXPM_API_KEY: ${{ secrets.HEXPM_API_KEY }}
 
@@ -76,7 +80,8 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # auto-tag.yml normally creates the Release; retry briefly in case it
+          # auto-tag.yml (trellis tag create --github-release) normally creates
+          # the Release; retry briefly in case it
           # hasn't published yet, then self-heal by creating it ourselves so a
           # tag fully drives the release even if auto-tag never ran.
           for i in 1 2 3 4 5; do
@@ -88,9 +93,9 @@ jobs:
           done
           if ! gh release view "$REF_NAME" >/dev/null 2>&1; then
             echo "Release $REF_NAME still missing; creating it."
-            notes_file=".changes/${REF_NAME}.md"
+            notes_file=".changes/tomlet/${REF_NAME}.md"
             if [ -f "$notes_file" ]; then
-              # Drop the changie "## vX.Y.Z - DATE" heading; the title carries it.
+              # Drop the "## vX.Y.Z - DATE" heading; the title carries it.
               tail -n +2 "$notes_file" > /tmp/release-notes.md
               gh release create "$REF_NAME" --title "$REF_NAME" \
                 --notes-file /tmp/release-notes.md

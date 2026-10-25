@@ -7,13 +7,35 @@ on:
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
   auto-tag:
-    uses: tylerbutler/actions/.github/workflows/auto-tag.yml@ed7d5e5f1d4370a5ccf06503916e3c301102ab1c # ratchet:tylerbutler/actions/.github/workflows/auto-tag.yml@main
-    with:
-      create-release: true
-    secrets:
-      app-id: ${{ secrets.RELEASE_APP_ID }}
-      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'release/pending'
+    runs-on: ubuntu-latest
+    steps:
+      # Tags pushed with the app token (not GITHUB_TOKEN) trigger publish.yml.
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # ratchet:actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Setup trellis
+        uses: ./.github/actions/setup-trellis
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create tags and GitHub Releases
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: trellis tag create --github-release
