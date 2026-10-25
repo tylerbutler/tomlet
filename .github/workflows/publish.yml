@@ -12,7 +12,7 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
       - name: Setup environment
         uses: ./.github/actions/setup
@@ -31,7 +31,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # ratchet:actions/checkout@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
       - name: Setup environment
         uses: ./.github/actions/setup
@@ -41,7 +41,7 @@ jobs:
           otp-version: "28"
 
       - name: Setup licence_audit
-        uses: tylerbutler/actions/setup-licence-audit@ee7def5950abcf0a519add705a95719ab345c05e # ratchet:tylerbutler/actions/setup-licence-audit@main
+        uses: tylerbutler/actions/setup-licence-audit@ed7d5e5f1d4370a5ccf06503916e3c301102ab1c # ratchet:tylerbutler/actions/setup-licence-audit@main
         with:
           version: v0.2.0
           setup-beam: "false"
@@ -65,7 +65,7 @@ jobs:
             -o "dist/tomlet-${REF_NAME}.tar.gz" HEAD
 
       - name: Attest SBOM
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # ratchet:actions/attest@v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # ratchet:actions/attest@v4
         with:
           subject-path: dist/tomlet-${{ github.ref_name }}.tar.gz
           sbom-path: dist/tomlet-${{ github.ref_name }}.cdx.json
