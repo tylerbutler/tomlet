@@ -1,0 +1,10 @@
+website/** linguist-documentation
+
+.agents/** linguist-vendored
+.github/agents/** linguist-vendored
+.github/hooks/** linguist-vendored
+.github/instructions/** linguist-vendored
+.github/prompts/** linguist-vendored
+.github/skills/** linguist-vendored
+apm.yml linguist-vendored
+apm.lock.yaml linguist-vendored
