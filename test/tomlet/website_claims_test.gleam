@@ -34,12 +34,7 @@ pub fn main() -> Nil {
 /// `parse(s) |> to_string == s` identity).
 pub fn claim_round_trip_is_byte_for_byte_test() {
   let input =
-    "# package metadata\n"
-    <> "name = \"tomlet\"\n"
-    <> "version = 0\n"
-    <> "\n"
-    <> "[deps]\n"
-    <> "gleam_stdlib = \">= 0.34.0\"\n"
+    "# package metadata\nname = \"tomlet\"\nversion = 0\n\n[deps]\ngleam_stdlib = \">= 0.34.0\"\n"
   let assert Ok(doc) = tomlet.parse(input)
   assert tomlet.to_string(doc) == input
 }
@@ -47,9 +42,7 @@ pub fn claim_round_trip_is_byte_for_byte_test() {
 /// Claim: "Comments ... survive the round trip."
 pub fn claim_comments_survive_round_trip_test() {
   let input =
-    "# leading comment\n"
-    <> "version = 1  # trailing comment\n"
-    <> "# dangling comment at end\n"
+    "# leading comment\nversion = 1  # trailing comment\n# dangling comment at end\n"
   let assert Ok(doc) = tomlet.parse(input)
   assert tomlet.to_string(doc) == input
 }
@@ -66,9 +59,7 @@ pub fn claim_key_order_survives_round_trip_test() {
 /// multi-line styles are not normalised).
 pub fn claim_string_style_survives_round_trip_test() {
   let input =
-    "basic = \"a\\tb\"\n"
-    <> "literal = 'a\\tb'\n"
-    <> "multiline = \"\"\"line one\nline two\"\"\"\n"
+    "basic = \"a\\tb\"\nliteral = 'a\\tb'\nmultiline = \"\"\"line one\nline two\"\"\"\n"
   let assert Ok(doc) = tomlet.parse(input)
   assert tomlet.to_string(doc) == input
 }
@@ -77,10 +68,7 @@ pub fn claim_string_style_survives_round_trip_test() {
 /// underscores are preserved lexically).
 pub fn claim_integer_base_survives_round_trip_test() {
   let input =
-    "hex = 0xDEAD_BEEF\n"
-    <> "octal = 0o755\n"
-    <> "binary = 0b1010_0101\n"
-    <> "grouped = 1_000_000\n"
+    "hex = 0xDEAD_BEEF\noctal = 0o755\nbinary = 0b1010_0101\ngrouped = 1_000_000\n"
   let assert Ok(doc) = tomlet.parse(input)
   assert tomlet.to_string(doc) == input
 }
@@ -127,14 +115,12 @@ pub fn claim_strict_1_0_on_request_test() {
 /// leading and trailing comments exactly where the human left them.
 pub fn claim_set_string_keeps_both_comments_test() {
   let input =
-    "# published to Hex on each tag\n"
-    <> "version = \"1.2.0\"  # keep in sync with the changelog\n"
+    "# published to Hex on each tag\nversion = \"1.2.0\"  # keep in sync with the changelog\n"
   let assert Ok(doc) = tomlet.parse(input)
   let assert Ok(doc) = tomlet.set_string(doc, ["version"], "1.3.0")
 
   let expected =
-    "# published to Hex on each tag\n"
-    <> "version = \"1.3.0\"  # keep in sync with the changelog\n"
+    "# published to Hex on each tag\nversion = \"1.3.0\"  # keep in sync with the changelog\n"
   assert tomlet.to_string(doc) == expected
 }
 
@@ -149,10 +135,7 @@ pub fn claim_set_string_keeps_both_comments_test() {
 /// exactly the "after" file shown on the site.
 pub fn claim_edit_demo_matches_after_panel_test() {
   let before =
-    "# package metadata\n"
-    <> "name = \"tomlet\"\n"
-    <> "version = 0\n"
-    <> "draft = true\n"
+    "# package metadata\nname = \"tomlet\"\nversion = 0\ndraft = true\n"
   let assert Ok(doc) = tomlet.parse(before)
   let assert Ok(doc) = tomlet.set_int(doc, ["version"], 1)
   let assert Ok(doc) = tomlet.remove(doc, ["draft"])
@@ -160,10 +143,7 @@ pub fn claim_edit_demo_matches_after_panel_test() {
     tomlet.insert_comment_before(doc, ["version"], "first stable release")
 
   let after =
-    "# package metadata\n"
-    <> "name = \"tomlet\"\n"
-    <> "# first stable release\n"
-    <> "version = 1\n"
+    "# package metadata\nname = \"tomlet\"\n# first stable release\nversion = 1\n"
   assert tomlet.to_string(doc) == after
 }
 
@@ -242,9 +222,7 @@ pub fn claim_every_edit_returns_a_result_test() {
 /// helpers and round-trips unchanged.
 pub fn claim_dates_are_opaque_with_lexical_helpers_test() {
   let input =
-    "released = 1979-05-27\n"
-    <> "alarm = 07:32:00\n"
-    <> "stamp = 1979-05-27T07:32:00Z\n"
+    "released = 1979-05-27\nalarm = 07:32:00\nstamp = 1979-05-27T07:32:00Z\n"
   let assert Ok(doc) = tomlet.parse(input)
 
   let assert Ok(date) = tomlet.get_date(doc, ["released"])

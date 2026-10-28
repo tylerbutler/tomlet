@@ -414,10 +414,8 @@ fn parse_value_error(error: ParseError, prefix_size: Int) -> ParseError {
 }
 
 fn value_offset(offset: Int, prefix_size: Int) -> Int {
-  case offset < prefix_size {
-    True -> 0
-    False -> offset - prefix_size
-  }
+  use <- bool.guard(when: offset < prefix_size, return: 0)
+  offset - prefix_size
 }
 
 /// Parse TOML bytes into a document.
