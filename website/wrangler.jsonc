@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tomlet",
+  "compatibility_date": "2026-10-28",
+  "assets": {
+    "directory": "./dist"
+  },
+  "routes": [
+    {
+      "pattern": "tomlet.tylerbutler.com",
+      "custom_domain": true
+    }
+  ]
+}
