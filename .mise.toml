@@ -1,6 +1,6 @@
 [tools]
 erlang = "27"
-gleam = "1.18.1"
+gleam = "1.19.2"
 rebar = "3.28.0"
 just = "1.59.0"
 node = "22"
