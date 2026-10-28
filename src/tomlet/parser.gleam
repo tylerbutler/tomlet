@@ -1493,8 +1493,7 @@ fn multiline_basic_escape_is_valid(
     [" ", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
     ["\t", ..rest] -> multiline_basic_line_ending_escape_is_valid(rest, version)
     ["e", ..rest] if version == Toml11 -> continue(rest)
-    ["x", ..rest] if version == Toml11 ->
-      hex_escape_is_valid_for(continue, rest)
+    ["x", ..rest] if version == Toml11 -> hex_escape_is_valid_for(continue, rest)
     [escaped, ..rest] ->
       case escaped {
         "b" | "t" | "n" | "f" | "r" | "\"" | "\\" -> continue(rest)
