@@ -30,6 +30,9 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     name: Attest SBOM
+    env:
+      # licence_audit v0.2.0 contains BEAM files compiled with OTP 28.
+      MISE_ERLANG_VERSION: "28"
     permissions:
       contents: write
       id-token: write
@@ -39,16 +42,11 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
-        with:
-          # licence_audit v0.2.0 is compiled with OTP 28; its BEAM files can't
-          # be loaded by older runtimes (OTP 27 fails with invalid_chunk ExpT).
-          otp-version: "28"
 
       - name: Setup licence_audit
-        uses: tylerbutler/actions/setup-licence-audit@ed7d5e5f1d4370a5ccf06503916e3c301102ab1c # ratchet:tylerbutler/actions/setup-licence-audit@main
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # ratchet:jdx/mise-action@v4
         with:
-          version: v0.2.0
-          setup-beam: "false"
+          install_args: github:tylerbutler/licence_audit
 
       - name: Generate CycloneDX SBOM
         env:

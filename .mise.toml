@@ -1,8 +1,14 @@
 [tools]
 erlang = "27"
 gleam = "1.18.1"
-just = "latest"
+rebar = "3.28.0"
+just = "1.59.0"
+node = "22"
+python = "3.14.2"
+# Keep the website's committed lockfile format (5.4).
+pnpm = "7.33.7"
 "github:tylerbutler/trellis" = "1.0.0"
+"github:tylerbutler/licence_audit" = { version = "0.2.0", asset_pattern = "licence_audit-v*.tar.gz" }
 
 [env]
 LC_ALL = "en_US.UTF-8"

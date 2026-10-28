@@ -3,13 +3,25 @@
 This guide is for people contributing to Tomlet. For library usage, see
 [`README.md`](./README.md).
 
-## Requirements
+## Setup
 
-- Gleam
-- Python 3, for TOML corpus test generation
-- [`just`](https://github.com/casey/just), for common project tasks
-- [`trellis`](https://trellis.tylerbutler.com/), for changelog fragments and releases
-  (pinned in `.mise.toml`)
+Install [mise](https://mise.jdx.dev/), then run:
+
+```sh
+mise install
+mise exec -- just deps
+```
+
+`.mise.toml` defines the project tool versions. Use mise only to install tools
+and set up the shell environment. Use [`just`](https://github.com/casey/just)
+to run tasks and download Gleam package dependencies. With mise
+[shell activation](https://mise.jdx.dev/getting-started.html#activate-mise),
+run `just` directly; otherwise, use `mise exec -- just <recipe>`.
+
+CI installs tools from the same config. The test matrices override Erlang and
+Node versions with `MISE_ERLANG_VERSION` and `MISE_NODE_VERSION`. CI tests OTP
+27 and 28; Gleam 1.18.1 emits Erlang syntax that OTP 26 cannot compile. The SBOM
+job requires OTP 28 to run the pinned licence_audit release.
 
 ## Common tasks
 
@@ -19,7 +31,7 @@ Run `just` to list available recipes.
 just build              # compile the package
 just test               # run unit tests and TOML corpus checks
 just format             # format src/ and test/
-just lint               # check formatting
+just lint               # check formatting and run glinter
 just ci                 # run the full validation workflow
 ```
 
