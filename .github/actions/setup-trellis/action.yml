@@ -5,14 +5,6 @@ runs:
   using: "composite"
   steps:
     - name: Install trellis
-      shell: bash
-      run: |
-        set -euo pipefail
-        version="$(sed -n 's/^"github:tylerbutler\/trellis" = "\(.*\)"$/\1/p' .mise.toml)"
-        if [ -z "$version" ]; then
-          echo "::error::trellis version not found in .mise.toml"
-          exit 1
-        fi
-        # The installer adds its install dir to $GITHUB_PATH.
-        curl --proto '=https' --tlsv1.2 -LsSf \
-          "https://github.com/tylerbutler/trellis/releases/download/v${version}/trellis-gleam-installer.sh" | sh
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # ratchet:jdx/mise-action@v4
+      with:
+        install_args: github:tylerbutler/trellis

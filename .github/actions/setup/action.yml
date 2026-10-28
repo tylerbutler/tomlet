@@ -1,46 +1,14 @@
 name: "Setup Gleam Environment"
-description: "Common setup steps for Gleam CI jobs (Erlang + optional Node/JavaScript)"
-
-inputs:
-  otp-version:
-    description: "Erlang/OTP version to install"
-    required: false
-    default: "27"
-  gleam-version:
-    description: "Gleam version to install"
-    required: false
-    default: "1.16.0"
-  rebar3-version:
-    description: "rebar3 version to install"
-    required: false
-    default: "3"
-  node:
-    description: "Whether to setup Node.js for the JavaScript target"
-    required: false
-    default: "false"
-  node-version:
-    description: "Node.js version to install (when node is true)"
-    required: false
-    default: "22"
+description: "Install project tools with mise and download dependencies with just"
 
 runs:
   using: "composite"
   steps:
-    - name: Setup just
-      uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # ratchet:extractions/setup-just@v4
-
-    - name: Setup BEAM
-      uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # ratchet:erlef/setup-beam@v1
+    - name: Install tools
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # ratchet:jdx/mise-action@v4
       with:
-        otp-version: ${{ inputs.otp-version }}
-        gleam-version: ${{ inputs.gleam-version }}
-        rebar3-version: ${{ inputs.rebar3-version }}
-
-    - name: Setup Node.js
-      if: inputs.node == 'true'
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # ratchet:actions/setup-node@v7
-      with:
-        node-version: ${{ inputs.node-version }}
+        install_args: erlang gleam rebar just node python
+        cache_key: "{{default}}-otp${{ env.MISE_ERLANG_VERSION }}-node${{ env.MISE_NODE_VERSION }}"
 
     - name: Cache Gleam dependencies
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # ratchet:actions/cache@v6
@@ -48,7 +16,7 @@ runs:
         path: |
           build/packages
           ~/.cache/gleam
-        key: gleam-${{ runner.os }}-otp${{ inputs.otp-version }}-${{ hashFiles('gleam.toml', 'manifest.toml') }}
+        key: gleam-${{ runner.os }}-otp${{ env.MISE_ERLANG_VERSION }}-${{ hashFiles('.mise.toml', 'gleam.toml', 'manifest.toml') }}
         restore-keys: |
           gleam-${{ runner.os }}-
 

@@ -13,15 +13,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        otp-version: ["26", "27", "28"]
+        otp-version: ["27", "28"]
     name: Test Erlang (OTP ${{ matrix.otp-version }})
+    env:
+      MISE_ERLANG_VERSION: ${{ matrix.otp-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
       - name: Setup environment
         uses: ./.github/actions/setup
-        with:
-          otp-version: ${{ matrix.otp-version }}
 
       - name: Check formatting
         run: just format-check
@@ -45,14 +45,13 @@ jobs:
       matrix:
         node-version: ["22", "24"]
     name: Test JavaScript (Node ${{ matrix.node-version }})
+    env:
+      MISE_NODE_VERSION: ${{ matrix.node-version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 
       - name: Setup environment
         uses: ./.github/actions/setup
-        with:
-          node: "true"
-          node-version: ${{ matrix.node-version }}
 
       - name: Build (warnings as errors)
         run: just build-strict-js
