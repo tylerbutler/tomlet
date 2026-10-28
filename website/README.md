@@ -42,7 +42,37 @@ node scripts/generate-og.mjs
 The script embeds the Fontsource fonts and rasterizes with the headless Chrome
 that Puppeteer caches locally (`~/.cache/puppeteer`).
 
-The output in `dist/` is fully static. Deployment is configured for **Netlify**
-via [`netlify.toml`](../netlify.toml) at the repo root: it sets the build `base`
-to `website/`, runs `pnpm build`, and publishes `dist/`. Point a Netlify site at
-this repo and it deploys with no further setup.
+## Deploy
+
+Deploy the static site to Cloudflare Workers with
+[`wrangler.jsonc`](./wrangler.jsonc). Run these commands from `website/`:
+
+```sh
+pnpm exec wrangler login
+pnpm run deploy              # build and deploy
+pnpm run deploy --dry-run    # build and validate without deploying
+```
+
+Wrangler serves `dist/` as static assets without Worker code or an Astro
+adapter. `public/_headers` sets a one-year cache lifetime for fingerprinted
+Astro assets.
+
+For automatic deployments, connect this repository in Cloudflare Workers
+Builds with these settings:
+
+| Setting | Value |
+| --- | --- |
+| Worker name | `tomlet` |
+| Production branch | `main` |
+| Root directory | `website` |
+| Build command | `pnpm build` |
+| Deploy command | `pnpm exec wrangler deploy` |
+| Node.js version (`NODE_VERSION`) | `22` |
+
+Cloudflare reads the pnpm version from `packageManager` in `package.json`.
+
+The configured custom domain is `tomlet.tylerbutler.com`. The Cloudflare
+account must have an active zone for `tylerbutler.com`. At cutover, remove
+any existing Netlify CNAME record for this hostname before you deploy;
+Wrangler creates the custom domain and its DNS record. Verify the site on
+Cloudflare before you disable Netlify deployments.
