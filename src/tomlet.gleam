@@ -2257,7 +2257,8 @@ fn insert_appended_entry(
 
 // When `parent` is realized only through dotted keys (no explicit standard-table
 // header), return the table context (`active_table`) the dotted family lives in
-// so the new key can be appended there as a dotted key.
+// so the new key can be appended there as a dotted key. The context must be a
+// proper ancestor of `parent`, not a child table that also contains its keys.
 fn dotted_key_context(
   entries: List(ast.Entry),
   active_table: List(String),
@@ -2274,7 +2275,10 @@ fn dotted_key_context(
         ast.KeyValue(key: key, ..) -> {
           let full_key = list.append(active_table, key_to_strings(key))
           use <- bool.guard(
-            when: key_utils.starts_with(full_key, parent) && full_key != parent,
+            when: key_utils.starts_with(parent, active_table)
+              && active_table != parent
+              && key_utils.starts_with(full_key, parent)
+              && full_key != parent,
             return: Ok(active_table),
           )
           dotted_key_context(rest, next_active_table, parent)
