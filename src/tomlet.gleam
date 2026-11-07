@@ -118,6 +118,7 @@ pub type ExpectedType {
 /// the dotted path relative to the table, e.g. `["pkg", "name"]` for an entry
 /// written as `pkg.name = ...` inside an inline table.
 pub type Value {
+  /// The decoded string contents, without TOML quotes or escape syntax.
   StringValue(String)
   IntValue(Int)
   FloatValue(Float)
@@ -796,6 +797,10 @@ fn get_indexed_loop(
 }
 
 /// Read a TOML string value at a key path.
+///
+/// Basic strings return decoded escapes. Multiline strings omit the initial
+/// newline, and multiline basic strings also omit line continuations.
+/// Literal strings keep backslashes as literal text.
 pub fn get_string(
   doc: Document,
   key: List(String),
