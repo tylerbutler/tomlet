@@ -18,6 +18,7 @@ import tomlet/ast
 import tomlet/key as key_utils
 import tomlet/parser
 import tomlet/path
+import william
 
 /// A parsed TOML document.
 ///
@@ -277,11 +278,8 @@ pub type EditError {
   /// of tables.
   KeyConflict(key: List(String))
 
-  /// The edit would have to insert a new key inside an existing inline table.
-  ///
-  /// Inline tables are written on a single line and cannot be extended in
-  /// place. Rewrite the table shape explicitly (for example, with `set_*` on a
-  /// standard table) instead of relying on implicit insertion.
+  /// Retained for compatibility. The `set_*` helpers now support insertion
+  /// inside inline tables and no longer return this error.
   InlineTableInsertUnsupported(key: List(String))
 
   /// The supplied value cannot be represented in the requested edit context.
@@ -1349,7 +1347,10 @@ fn collect_table_entries(
 /// Set a TOML string value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inside an inline table, missing keys stay inline;
+/// missing parents use dotted keys. Blocking values return `KeyConflict`.
+/// Inline-table comments are preserved. Paths through arrays of tables return
+/// `KeyConflict`; these setters do not support selecting a record to edit.
 ///
 /// ```gleam
 /// let assert Ok(doc) =
@@ -1375,7 +1376,7 @@ pub fn set_string(
 /// Set a TOML integer value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_int(
   doc: Document,
   key: List(String),
@@ -1387,7 +1388,7 @@ pub fn set_int(
 /// Set a TOML boolean value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_bool(
   doc: Document,
   key: List(String),
@@ -1403,7 +1404,7 @@ pub fn set_bool(
 /// Set a TOML float value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_float(
   doc: Document,
   key: List(String),
@@ -1415,7 +1416,7 @@ pub fn set_float(
 /// Set a TOML local date value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_date(
   doc: Document,
   key: List(String),
@@ -1427,7 +1428,7 @@ pub fn set_date(
 /// Set a TOML local time value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_time(
   doc: Document,
   key: List(String),
@@ -1439,7 +1440,7 @@ pub fn set_time(
 /// Set a TOML date-time value at a key path.
 ///
 /// Existing values are replaced in place. Missing keys are inserted, creating a
-/// table header when needed.
+/// table header when needed. Inline-table insertion follows `set_string`.
 pub fn set_datetime(
   doc: Document,
   key: List(String),
@@ -1452,7 +1453,8 @@ pub fn set_datetime(
 ///
 /// Items are emitted in order using a default flow-style representation
 /// (`[a, b, c]`). Existing values are replaced in place. Missing keys are
-/// inserted, creating a table header when needed.
+/// inserted, creating a table header when needed. Inline-table insertion
+/// follows `set_string`.
 ///
 /// `StandardTableValue` and `ArrayOfTablesValue` items are rejected with
 /// `InvalidValue`; use `set_inline_table` or `append_array_of_tables` for
@@ -1487,6 +1489,7 @@ pub fn set_array(
 /// (`{ a = 1, b = 2 }`). Each entry's key path is rendered as a dotted key
 /// when it contains more than one segment. Existing values are replaced in
 /// place. Missing keys are inserted, creating a table header when needed.
+/// Inline-table insertion follows `set_string`.
 ///
 /// Entry values that are `StandardTableValue` or `ArrayOfTablesValue` are
 /// rejected with `InvalidValue`; nest an `InlineTableValue` instead.
@@ -2019,6 +2022,119 @@ fn emit_inline_table_entry(entry: ast.InlineTableEntry) -> String {
   <> emit_trivia(trailing)
 }
 
+// Inline comments exist only in source_text, including comments in nested values.
+fn emit_updated_inline_table(
+  original: List(ast.InlineTableEntry),
+  updated: List(ast.InlineTableEntry),
+  source_text: String,
+  target: List(String),
+) -> String {
+  use <- bool.guard(
+    when: !string.contains(source_text, "#"),
+    return: emit_inline_table(updated),
+  )
+  let tokens = william.tokenise(william.new(), source_text)
+  case
+    list.any(tokens, fn(token) {
+      case token {
+        william.Comment(_) -> True
+        _ -> False
+      }
+    })
+  {
+    True -> rewrite_inline_table(tokens, original, updated, target, [])
+    False -> emit_inline_table(updated)
+  }
+}
+
+fn rewrite_inline_table(
+  tokens: List(william.Token),
+  original: List(ast.InlineTableEntry),
+  updated: List(ast.InlineTableEntry),
+  target: List(String),
+  fragments: List(String),
+) -> String {
+  case tokens, original, updated {
+    [william.Equal, ..rest], [before, ..original], [after, ..updated] -> {
+      let #(trivia, rest) = list.split_while(rest, inline_token_is_trivia)
+      let #(value_tokens, rest) = take_inline_value_tokens(rest, 0, [])
+      let value_text = case
+        before.value == after.value,
+        key_to_strings(before.key) == target
+      {
+        True, _ -> william.to_source(value_tokens)
+        False, True -> emit_value(after.value)
+        False, False ->
+          case before.value, after.value {
+            ast.InlineTable(old_entries, _), ast.InlineTable(new_entries, _) ->
+              rewrite_inline_table(
+                value_tokens,
+                old_entries,
+                new_entries,
+                list.drop(target, list.length(key_to_strings(before.key))),
+                [],
+              )
+            _, _ -> emit_value(after.value)
+          }
+      }
+      let separator = case original, updated {
+        [], [_, ..] ->
+          case list.drop_while(rest, inline_token_is_trivia) {
+            [william.Comma, ..] -> ""
+            _ -> ","
+          }
+        _, _ -> ""
+      }
+      rewrite_inline_table(rest, original, updated, target, [
+        separator,
+        value_text,
+        william.to_source(trivia),
+        "=",
+        ..fragments
+      ])
+    }
+    [william.CloseBrace], [], [entry] ->
+      ["}", "\n", emit_inline_table_entry(entry), " ", ..fragments]
+      |> list.reverse
+      |> string.concat
+    [token, ..rest], _, _ ->
+      rewrite_inline_table(rest, original, updated, target, [
+        william.to_source([token]),
+        ..fragments
+      ])
+    [], _, _ -> fragments |> list.reverse |> string.concat
+  }
+}
+
+fn inline_token_is_trivia(token: william.Token) -> Bool {
+  case token {
+    william.Whitespace(_) | william.EndOfLine(_) | william.Comment(_) -> True
+    _ -> False
+  }
+}
+
+fn take_inline_value_tokens(
+  tokens: List(william.Token),
+  depth: Int,
+  collected: List(william.Token),
+) -> #(List(william.Token), List(william.Token)) {
+  case tokens {
+    [] -> #(list.reverse(collected), [])
+    [token, ..rest] -> {
+      let next_depth = case token {
+        william.OpenBracket | william.OpenBrace -> depth + 1
+        william.CloseBracket | william.CloseBrace -> depth - 1
+        _ -> depth
+      }
+      let collected = [token, ..collected]
+      case next_depth {
+        0 -> #(list.reverse(collected), rest)
+        _ -> take_inline_value_tokens(rest, next_depth, collected)
+      }
+    }
+  }
+}
+
 fn emit_trivia(trivia: ast.Trivia) -> String {
   let ast.Trivia(text) = trivia
   text
@@ -2031,18 +2147,31 @@ fn set_value(
 ) -> Result(Document, EditError) {
   use _ <- result.try(validate_edit_key(key))
   let ast.Table(entries: entries, header: header) = doc.root
-  let #(updated_entries, found) =
-    update_existing_entries(entries, [], key, value)
+  use <- bool.guard(
+    when: list.any(entries, fn(entry) {
+      case entry {
+        ast.TableHeader(ast.Header(
+          kind: ast.ArrayOfTablesHeader,
+          key: table_key,
+          ..,
+        )) -> key_utils.starts_with(key, key_to_strings(table_key))
+        _ -> False
+      }
+    }),
+    return: Error(KeyConflict(key)),
+  )
+  use #(updated_entries, found) <- result.try(update_existing_entries(
+    entries,
+    [],
+    key,
+    value,
+  ))
   use <- bool.guard(
     when: found,
     return: Ok(with_root(
       doc,
       ast.Table(entries: updated_entries, header: header),
     )),
-  )
-  use <- bool.guard(
-    when: inline_table_blocks_key(entries, [], key),
-    return: Error(InlineTableInsertUnsupported(key)),
   )
   use <- bool.guard(
     when: new_key_conflicts(entries, key),
@@ -2068,32 +2197,52 @@ fn update_key_value_entry(
   next_active_table: List(String),
   target: List(String),
   value: ast.Value,
-) -> #(List(ast.Entry), Bool) {
+) -> Result(#(List(ast.Entry), Bool), EditError) {
   let full_key = list.append(active_table, key_to_strings(key))
-  use <- bool.guard(when: full_key == target, return: #(
-    [ast.KeyValue(leading, key, value, trailing), ..rest],
-    True,
-  ))
+  use <- bool.guard(
+    when: full_key == target,
+    return: Ok(#([ast.KeyValue(leading, key, value, trailing), ..rest], True)),
+  )
   case entry_value {
-    ast.InlineTable(inline_entries, source_text: _) -> {
-      let #(updated_inline_entries, inline_found) =
-        update_inline_entries(inline_entries, full_key, target, value)
-      use <- bool.lazy_guard(when: !inline_found, return: fn() {
-        let #(updated_rest, found) =
-          update_existing_entries(rest, next_active_table, target, value)
-        #([entry, ..updated_rest], found)
-      })
+    ast.InlineTable(inline_entries, source_text) -> {
+      use <- bool.lazy_guard(
+        when: !key_utils.starts_with(target, full_key),
+        return: fn() {
+          use #(updated_rest, found) <- result.try(update_existing_entries(
+            rest,
+            next_active_table,
+            target,
+            value,
+          ))
+          Ok(#([entry, ..updated_rest], found))
+        },
+      )
+      use updated_inline_entries <- result.try(update_inline_entries(
+        inline_entries,
+        full_key,
+        target,
+        value,
+      ))
       let updated_value =
         ast.InlineTable(
           updated_inline_entries,
-          emit_inline_table(updated_inline_entries),
+          emit_updated_inline_table(
+            inline_entries,
+            updated_inline_entries,
+            source_text,
+            list.drop(target, list.length(full_key)),
+          ),
         )
-      #([ast.KeyValue(leading, key, updated_value, trailing), ..rest], True)
+      Ok(#([ast.KeyValue(leading, key, updated_value, trailing), ..rest], True))
     }
     _ -> {
-      let #(updated_rest, found) =
-        update_existing_entries(rest, next_active_table, target, value)
-      #([entry, ..updated_rest], found)
+      use #(updated_rest, found) <- result.try(update_existing_entries(
+        rest,
+        next_active_table,
+        target,
+        value,
+      ))
+      Ok(#([entry, ..updated_rest], found))
     }
   }
 }
@@ -2103,9 +2252,9 @@ fn update_existing_entries(
   active_table: List(String),
   target: List(String),
   value: ast.Value,
-) -> #(List(ast.Entry), Bool) {
+) -> Result(#(List(ast.Entry), Bool), EditError) {
   case entries {
-    [] -> #([], False)
+    [] -> Ok(#([], False))
     [entry, ..rest] -> {
       let next_active_table = case entry {
         ast.TableHeader(header) -> header_key(header)
@@ -2132,9 +2281,13 @@ fn update_existing_entries(
             value,
           )
         _ -> {
-          let #(updated_rest, found) =
-            update_existing_entries(rest, next_active_table, target, value)
-          #([entry, ..updated_rest], found)
+          use #(updated_rest, found) <- result.try(update_existing_entries(
+            rest,
+            next_active_table,
+            target,
+            value,
+          ))
+          Ok(#([entry, ..updated_rest], found))
         }
       }
     }
@@ -2146,81 +2299,63 @@ fn update_inline_entries(
   active_path: List(String),
   target: List(String),
   value: ast.Value,
-) -> #(List(ast.InlineTableEntry), Bool) {
+) -> Result(List(ast.InlineTableEntry), EditError) {
   case entries {
-    [] -> #([], False)
-    [
-      ast.InlineTableEntry(
-        leading: leading,
-        key: key,
-        value: entry_value,
-        trailing: trailing,
-      ),
-      ..rest
-    ] ->
-      update_inline_entry(
-        leading,
-        key,
-        entry_value,
-        trailing,
-        rest,
-        active_path,
-        target,
-        value,
-      )
-  }
-}
-
-fn update_inline_entry(
-  leading: ast.Trivia,
-  key: ast.Key,
-  entry_value: ast.Value,
-  trailing: ast.Trivia,
-  rest: List(ast.InlineTableEntry),
-  active_path: List(String),
-  target: List(String),
-  value: ast.Value,
-) -> #(List(ast.InlineTableEntry), Bool) {
-  let full_key = list.append(active_path, key_to_strings(key))
-  use <- bool.guard(when: full_key == target, return: #(
-    [ast.InlineTableEntry(leading, key, value, trailing), ..rest],
-    True,
-  ))
-  case entry_value {
-    ast.InlineTable(nested_entries, source_text: _) -> {
-      let #(updated_nested_entries, nested_found) =
-        update_inline_entries(nested_entries, full_key, target, value)
-      use <- bool.lazy_guard(when: !nested_found, return: fn() {
-        let #(updated_rest, found) =
-          update_inline_entries(rest, active_path, target, value)
-        #(
-          [
-            ast.InlineTableEntry(leading, key, entry_value, trailing),
-            ..updated_rest
-          ],
-          found,
-        )
-      })
-      let updated_value =
-        ast.InlineTable(
-          updated_nested_entries,
-          emit_inline_table(updated_nested_entries),
-        )
-      #(
-        [ast.InlineTableEntry(leading, key, updated_value, trailing), ..rest],
-        True,
-      )
+    [] -> {
+      let relative = list.drop(target, list.length(active_path))
+      Ok([
+        ast.InlineTableEntry(
+          leading: ast.Trivia(""),
+          key: key_from_strings(relative),
+          value: value,
+          trailing: ast.Trivia(""),
+        ),
+      ])
     }
-    _ -> {
-      let #(updated_rest, found) =
-        update_inline_entries(rest, active_path, target, value)
-      #(
-        [
-          ast.InlineTableEntry(leading, key, entry_value, trailing),
-          ..updated_rest
-        ],
-        found,
+    [entry, ..rest] -> {
+      let full_key = list.append(active_path, key_to_strings(entry.key))
+      use <- bool.guard(
+        when: full_key == target,
+        return: Ok([ast.InlineTableEntry(..entry, value: value), ..rest]),
       )
+      use <- bool.guard(
+        when: key_utils.starts_with(full_key, target),
+        return: Error(KeyConflict(target)),
+      )
+      use <- bool.lazy_guard(
+        when: !key_utils.starts_with(target, full_key),
+        return: fn() {
+          use updated_rest <- result.try(update_inline_entries(
+            rest,
+            active_path,
+            target,
+            value,
+          ))
+          Ok([entry, ..updated_rest])
+        },
+      )
+      case entry.value {
+        ast.InlineTable(nested_entries, source_text) -> {
+          use updated <- result.try(update_inline_entries(
+            nested_entries,
+            full_key,
+            target,
+            value,
+          ))
+          let updated_value =
+            ast.InlineTable(
+              updated,
+              emit_updated_inline_table(
+                nested_entries,
+                updated,
+                source_text,
+                list.drop(target, list.length(full_key)),
+              ),
+            )
+          Ok([ast.InlineTableEntry(..entry, value: updated_value), ..rest])
+        }
+        _ -> Error(KeyConflict(target))
+      }
     }
   }
 }
@@ -2363,30 +2498,6 @@ fn append_inside_table(
 
 fn new_key_conflicts(entries: List(ast.Entry), target: List(String)) -> Bool {
   new_key_conflicts_with_table(entries, [], target)
-}
-
-fn inline_table_blocks_key(
-  entries: List(ast.Entry),
-  active_table: List(String),
-  target: List(String),
-) -> Bool {
-  case entries {
-    [] -> False
-    [entry, ..rest] -> {
-      let next_active_table = case entry {
-        ast.TableHeader(header) -> header_key(header)
-        _ -> active_table
-      }
-      let blocks = case entry {
-        ast.KeyValue(key: key, value: ast.InlineTable(..), ..) -> {
-          let full_key = list.append(active_table, key_to_strings(key))
-          key_utils.starts_with(target, full_key) && full_key != target
-        }
-        _ -> False
-      }
-      blocks || inline_table_blocks_key(rest, next_active_table, target)
-    }
-  }
 }
 
 fn new_key_conflicts_with_table(

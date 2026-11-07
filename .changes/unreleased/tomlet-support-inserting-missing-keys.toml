@@ -1,0 +1,3 @@
+package = "tomlet"
+kind = "Added"
+body = "Support inserting missing keys inside existing inline tables with set_* helpers, including nested and dotted paths. Preserve internal comments during edits and reject ambiguous paths through arrays of tables with KeyConflict."
