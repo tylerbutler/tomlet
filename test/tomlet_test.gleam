@@ -1,4 +1,6 @@
 import gleam/dynamic/decode
+import gleam/list
+import gleam/string
 import gleeunit
 import tomlet
 
@@ -683,12 +685,275 @@ pub fn set_string_updates_dotted_key_inside_inline_table_test() {
     == "package = { metadata.name = \"carrot\" }\n"
 }
 
-pub fn set_string_missing_inline_table_key_returns_unsupported_test() {
+pub fn set_string_inserts_missing_inline_table_key_test() {
   let input = "package = { name = \"tomato\" }\n"
   let assert Ok(doc) = tomlet.parse(input)
 
-  assert tomlet.set_string(doc, ["package", "version"], "0.1.0")
-    == Error(tomlet.InlineTableInsertUnsupported(["package", "version"]))
+  let assert Ok(updated) =
+    tomlet.set_string(doc, ["package", "version"], "0.1.0")
+
+  assert tomlet.to_string(updated)
+    == "package = { name = \"tomato\", version = \"0.1.0\" }\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get_string(reparsed, ["package", "version"]) == Ok("0.1.0")
+  assert tomlet.table_keys(reparsed, ["package"]) == Ok(["name", "version"])
+  assert tomlet.to_string(doc) == input
+}
+
+pub fn set_array_inserts_inline_sibling_preserving_trivia_test() {
+  let input =
+    "# tools\r\n[tools]\r\nlicence_audit = { allow = [\"MIT\"] } # policy\r\nother = 'unchanged'\r\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(updated) =
+    tomlet.set_array(doc, ["tools", "licence_audit", "deny"], [])
+
+  assert tomlet.to_string(updated)
+    == "# tools\r\n[tools]\r\nlicence_audit = { allow = [\"MIT\"], deny = [] } # policy\r\nother = 'unchanged'\r\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get(reparsed, ["tools", "licence_audit", "deny"])
+    == Ok(tomlet.ArrayValue([]))
+  assert tomlet.get(reparsed, ["tools", "licence_audit", "allow"])
+    == Ok(tomlet.ArrayValue([tomlet.StringValue("MIT")]))
+}
+
+pub fn set_int_inserts_into_correct_nested_inline_table_test() {
+  let input =
+    "other = { keep = true }\npackage = { meta = { count = 0x2a }, sibling = { keep = 'yes' } }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(updated) = tomlet.set_int(doc, ["package", "meta", "new"], 7)
+
+  assert tomlet.to_string(updated)
+    == "other = { keep = true }\npackage = { meta = { count = 0x2a, new = 7 }, sibling = { keep = 'yes' } }\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get_int(reparsed, ["package", "meta", "new"]) == Ok(7)
+  assert tomlet.get_int(reparsed, ["package", "meta", "count"]) == Ok(42)
+  assert tomlet.get_string(reparsed, ["package", "sibling", "keep"])
+    == Ok("yes")
+}
+
+pub fn set_bool_creates_missing_inline_parents_as_dotted_keys_test() {
+  let assert Ok(doc) = tomlet.parse("package = { meta = {} }\n")
+  let path = ["package", "meta", "release", "flags", "enabled"]
+  let assert Ok(updated) = tomlet.set_bool(doc, path, True)
+
+  assert tomlet.to_string(updated)
+    == "package = { meta = { release.flags.enabled = true } }\n"
+  let assert Ok(reparsed) =
+    tomlet.parse_with(tomlet.to_string(updated), tomlet.Toml10)
+  assert tomlet.get_bool(reparsed, path) == Ok(True)
+}
+
+pub fn set_string_inserts_quoted_inline_keys_test() {
+  let assert Ok(doc) = tomlet.parse("\"package.name\" = { 'meta data' = {} }\n")
+  let path = ["package.name", "meta data", "quoted \"key", "", "a.b"]
+  let assert Ok(updated) = tomlet.set_string(doc, path, "added")
+
+  assert tomlet.to_string(updated)
+    == "\"package.name\" = { 'meta data' = { \"quoted \\\"key\".\"\".\"a.b\" = \"added\" } }\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get_string(reparsed, path) == Ok("added")
+}
+
+pub fn set_int_extends_dotted_inline_keys_and_nested_values_test() {
+  let assert Ok(doc) =
+    tomlet.parse("package = { meta.name = 'old', meta.release = {} }\n")
+  let assert Ok(updated) =
+    tomlet.set_int(doc, ["package", "meta", "downloads"], 42)
+  let assert Ok(updated) =
+    tomlet.set_int(updated, ["package", "meta", "release", "year"], 2026)
+  let assert Ok(updated) =
+    tomlet.set_int(updated, ["package", "meta", "downloads"], 43)
+
+  assert tomlet.to_string(updated)
+    == "package = { meta.name = 'old', meta.release = { year = 2026 }, meta.downloads = 43 }\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get_int(reparsed, ["package", "meta", "downloads"]) == Ok(43)
+  assert tomlet.get_int(reparsed, ["package", "meta", "release", "year"])
+    == Ok(2026)
+}
+
+pub fn set_inline_table_inserts_nested_value_test() {
+  let assert Ok(doc) = tomlet.parse("package = {}\n")
+  let assert Ok(updated) =
+    tomlet.set_inline_table(doc, ["package", "meta"], [
+      #(["name"], tomlet.StringValue("tomato")),
+    ])
+  let assert Ok(updated) =
+    tomlet.set_array(updated, ["package", "meta", "tags"], [
+      tomlet.StringValue("config"),
+    ])
+
+  assert tomlet.to_string(updated)
+    == "package = { meta = { name = \"tomato\", tags = [\"config\"] } }\n"
+  let assert Ok(reparsed) = tomlet.parse(tomlet.to_string(updated))
+  assert tomlet.get(reparsed, ["package", "meta", "tags"])
+    == Ok(tomlet.ArrayValue([tomlet.StringValue("config")]))
+}
+
+pub fn set_scalar_helpers_insert_into_empty_inline_tables_test() {
+  let assert Ok(doc) = tomlet.parse("package = {}\n")
+  let assert Ok(date) = tomlet.date_from_string("1979-05-27")
+  let assert Ok(time) = tomlet.time_from_string("07:32:00")
+  let assert Ok(datetime) = tomlet.datetime_from_string("1979-05-27T07:32:00Z")
+  let edits = [
+    tomlet.set_string(doc, ["package", "value"], "tomato"),
+    tomlet.set_int(doc, ["package", "value"], 42),
+    tomlet.set_bool(doc, ["package", "value"], True),
+    tomlet.set_float(doc, ["package", "value"], 1.5),
+    tomlet.set_date(doc, ["package", "value"], date),
+    tomlet.set_time(doc, ["package", "value"], time),
+    tomlet.set_datetime(doc, ["package", "value"], datetime),
+  ]
+  list.each(edits, fn(edit) {
+    let assert Ok(updated) = edit
+    let assert Ok(reparsed) =
+      tomlet.parse_with(tomlet.to_string(updated), tomlet.Toml10)
+    let assert Ok(_) = tomlet.get(updated, ["package", "value"])
+    assert tomlet.get(reparsed, ["package", "value"])
+      == tomlet.get(updated, ["package", "value"])
+  })
+}
+
+pub fn inline_insertion_rejects_blocked_paths_test() {
+  let cases = [
+    #("package = { name = 'tomato' }\n", ["package", "name", "child"]),
+    #("package = { items = [] }\n", ["package", "items", "child"]),
+    #("package = { meta = { name = 'tomato' } }\n", [
+      "package", "meta", "name", "child",
+    ]),
+    #("package = { meta.name = 'tomato' }\n", ["package", "meta"]),
+    #("package = { meta.name = 'tomato' }\n", [
+      "package", "meta", "name", "child",
+    ]),
+    #("package = { meta.name = {}, meta.other = true }\n", ["package", "meta"]),
+  ]
+  list.each(cases, fn(test_case) {
+    let #(input, path) = test_case
+    let assert Ok(doc) = tomlet.parse(input)
+    assert tomlet.set_int(doc, path, 42) == Error(tomlet.KeyConflict(path))
+    assert tomlet.to_string(doc) == input
+  })
+}
+
+pub fn set_bool_inserts_into_multiline_inline_table_test() {
+  let input = "package = {\n  name = 'tomato',\n}\n"
+  let assert Ok(doc) = tomlet.parse_with(input, tomlet.Toml11)
+  let assert Ok(updated) = tomlet.set_bool(doc, ["package", "enabled"], True)
+
+  assert tomlet.to_string(updated)
+    == "package = { name = 'tomato', enabled = true }\n"
+  let assert Ok(reparsed) =
+    tomlet.parse_with(tomlet.to_string(updated), tomlet.Toml11)
+  assert tomlet.get_bool(reparsed, ["package", "enabled"]) == Ok(True)
+}
+
+pub fn inline_insertion_preserves_internal_comments_test() {
+  let inputs = [
+    "package = {\n  name = 'tomato', # policy\n}\n",
+    "package = {\n  name = 'tomato' # policy\n}\n",
+    "package = {\n  # policy\n}\n",
+    "package = {\n  # policy\n  name = 'tomato',\n}\n",
+    "package = {\n  name = '''tomato\n# inside string''', # policy\n}\n",
+    "package = {\n  values = [\n    '# in string', # array note\n  ], # policy\n}\n",
+    "package = {\n  'a=b' = { text = '}, = #' }, # policy\n}\n",
+    "package = {\n  date = 1979-05-27T07:32:00Z, # policy\n}\n",
+  ]
+  list.each(inputs, fn(input) {
+    let assert Ok(doc) = tomlet.parse(input)
+    let assert Ok(updated) = tomlet.set_bool(doc, ["package", "enabled"], True)
+    let output = tomlet.to_string(updated)
+    assert string.contains(output, "# policy\n")
+    let assert Ok(reparsed) = tomlet.parse(output)
+    assert tomlet.get_bool(reparsed, ["package", "enabled"]) == Ok(True)
+    let assert Ok(tomlet.InlineTableValue(entries)) =
+      tomlet.get(doc, ["package"])
+    list.each(entries, fn(entry) {
+      let #(key, value) = entry
+      assert tomlet.get(reparsed, ["package", ..key]) == Ok(value)
+    })
+    let assert Ok(replaced) =
+      tomlet.set_bool(updated, ["package", "enabled"], False)
+    assert string.contains(tomlet.to_string(replaced), "# policy\n")
+    let assert Ok(_) = tomlet.parse(tomlet.to_string(replaced))
+  })
+}
+
+pub fn nested_inline_insertion_preserves_enclosing_and_nested_comments_test() {
+  let input =
+    "package = {\r\n  # outer note\r\n  meta = {\r\n    name = 'tomato', # inner note\r\n  },\r\n  values = [\r\n    '# in string', # array note\r\n  ],\r\n}\r\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(updated) =
+    tomlet.set_bool(doc, ["package", "meta", "enabled"], True)
+  let assert Ok(updated) =
+    tomlet.set_string(updated, ["package", "meta", "name"], "carrot")
+  let assert Ok(updated) = tomlet.set_bool(updated, ["package", "extra"], True)
+  let output = tomlet.to_string(updated)
+  assert string.contains(output, "# outer note\r\n")
+  assert string.contains(output, "# inner note\r\n")
+  assert string.contains(output, "'# in string', # array note\r\n")
+  let assert Ok(reparsed) = tomlet.parse(output)
+  assert tomlet.get_bool(reparsed, ["package", "meta", "enabled"]) == Ok(True)
+  assert tomlet.get_string(reparsed, ["package", "meta", "name"])
+    == Ok("carrot")
+  assert tomlet.get_bool(reparsed, ["package", "extra"]) == Ok(True)
+  assert tomlet.get(reparsed, ["package", "values"])
+    == tomlet.get(doc, ["package", "values"])
+}
+
+pub fn inline_insertion_rejects_unindexed_array_table_paths_test() {
+  let inputs = [
+    "[[packages]]\nmeta = { keep = true }\n[[packages]]\nmeta = { keep = false }\n",
+    "[[packages]]\nmeta = { keep = true }\n[[packages]]\nmeta = { added = false }\n",
+    "[[packages]]\nmeta = {}\n",
+    "[[packages]]\n[packages.details]\nmeta = {}\n",
+  ]
+  list.each(inputs, fn(input) {
+    let assert Ok(doc) = tomlet.parse(input)
+    let path = case string.contains(input, "[packages.details]") {
+      True -> ["packages", "details", "meta", "added"]
+      False -> ["packages", "meta", "added"]
+    }
+    assert tomlet.set_bool(doc, path, True) == Error(tomlet.KeyConflict(path))
+    assert tomlet.to_string(doc) == input
+  })
+}
+
+pub fn inline_table_replacement_preserves_parent_comments_and_replaces_keys_test() {
+  let input =
+    "package = {\n  # outer note\n  meta = {\n    old = 1, # replaced note\n  }, # tail note\n}\n"
+  let replacements = [
+    [],
+    [#(["new"], tomlet.IntValue(2))],
+    [#(["new"], tomlet.IntValue(2)), #(["other"], tomlet.BoolValue(True))],
+  ]
+  list.each(replacements, fn(entries) {
+    let assert Ok(doc) = tomlet.parse(input)
+    let assert Ok(updated) =
+      tomlet.set_inline_table(doc, ["package", "meta"], entries)
+    let output = tomlet.to_string(updated)
+    assert string.contains(output, "# outer note\n")
+    assert string.contains(output, "# tail note\n")
+    let assert Ok(reparsed) = tomlet.parse(output)
+    assert tomlet.get(reparsed, ["package", "meta"])
+      == Ok(tomlet.InlineTableValue(entries))
+  })
+}
+
+pub fn inline_replacement_rejects_unindexed_array_table_paths_test() {
+  let input =
+    "[[packages]]\nmeta = { keep = true }\n[[packages]]\nmeta = { keep = false }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let path = ["packages", "meta", "keep"]
+  assert tomlet.set_bool(doc, path, False) == Error(tomlet.KeyConflict(path))
+  assert tomlet.to_string(doc) == input
+}
+
+pub fn inline_insertion_outside_array_table_keeps_working_test() {
+  let input = "meta = { keep = true }\n[[packages]]\nmeta = { keep = false }\n"
+  let assert Ok(doc) = tomlet.parse(input)
+  let assert Ok(updated) = tomlet.set_bool(doc, ["meta", "added"], True)
+  assert tomlet.to_string(updated)
+    == "meta = { keep = true, added = true }\n[[packages]]\nmeta = { keep = false }\n"
 }
 
 pub fn set_string_appends_new_root_key_before_tables_test() {

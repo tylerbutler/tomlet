@@ -210,7 +210,10 @@ fn key_segment_from_string(
     william.BasicString ->
       case basic_string_content_is_valid(value, version) {
         True ->
-          Ok(ast.QuotedKeySegment(basic_key_value(value), "\"" <> value <> "\""))
+          Ok(ast.QuotedKeySegment(
+            basic_string_value(value),
+            "\"" <> value <> "\"",
+          ))
         False -> Error(Nil)
       }
     william.LiteralString ->
@@ -767,7 +770,7 @@ fn parse_key_segment(
         |> string.drop_start(1)
         |> string.drop_end(1)
       case basic_string_content_is_valid(inner, version) {
-        True -> Ok(ast.QuotedKeySegment(basic_key_value(inner), trimmed))
+        True -> Ok(ast.QuotedKeySegment(basic_string_value(inner), trimmed))
         False -> Error(Nil)
       }
     }
@@ -1464,7 +1467,11 @@ fn parse_multiline_basic_string(
   let content_valid =
     text != "\"\"\"" && multiline_basic_string_content_is_valid(inner, version)
   use <- bool.guard(when: !content_valid, return: Error(Nil))
-  Ok(ast.String(inner, ast.MultiBasicString, text))
+  Ok(ast.String(
+    basic_string_value(trim_initial_newline(inner)),
+    ast.MultiBasicString,
+    text,
+  ))
 }
 
 fn parse_multiline_literal_string(text: String) -> Result(ast.Value, Nil) {
@@ -1479,7 +1486,14 @@ fn parse_multiline_literal_string(text: String) -> Result(ast.Value, Nil) {
   let content_valid =
     text != "'''" && multiline_literal_string_content_is_valid(inner)
   use <- bool.guard(when: !content_valid, return: Error(Nil))
-  Ok(ast.String(inner, ast.MultiLiteralString, text))
+  Ok(ast.String(trim_initial_newline(inner), ast.MultiLiteralString, text))
+}
+
+fn trim_initial_newline(text: String) -> String {
+  case text {
+    "\n" <> rest -> rest
+    _ -> text
+  }
 }
 
 fn parse_basic_string(
@@ -1498,7 +1512,7 @@ fn parse_basic_string(
     when: !basic_string_content_is_valid(inner, version),
     return: Error(Nil),
   )
-  Ok(ast.String(inner, ast.BasicString, text))
+  Ok(ast.String(basic_string_value(inner), ast.BasicString, text))
 }
 
 fn parse_literal_string(text: String) -> Result(ast.Value, Nil) {
@@ -2308,47 +2322,57 @@ fn char_is_disallowed_control(char: String) -> Bool {
   }
 }
 
-fn basic_key_value(text: String) -> String {
-  basic_key_value_loop(string.to_graphemes(text), "")
+// Call only after validation; whitespace after a backslash is a multiline continuation.
+fn basic_string_value(text: String) -> String {
+  basic_string_value_loop(string.to_graphemes(text), "")
 }
 
-fn basic_key_value_loop(chars: List(String), acc: String) -> String {
+fn basic_string_value_loop(chars: List(String), acc: String) -> String {
   case chars {
     [] -> acc
+    ["\\", whitespace, ..rest]
+      if whitespace == " " || whitespace == "\t" || whitespace == "\n"
+    ->
+      basic_string_value_loop(
+        list.drop_while(rest, fn(char) {
+          char == " " || char == "\t" || char == "\n"
+        }),
+        acc,
+      )
     ["\\", escaped, ..rest] ->
       case escaped {
-        "b" -> basic_key_value_loop(rest, acc <> "\u{0008}")
-        "t" -> basic_key_value_loop(rest, acc <> "\t")
-        "n" -> basic_key_value_loop(rest, acc <> "\n")
-        "f" -> basic_key_value_loop(rest, acc <> "\u{000C}")
-        "r" -> basic_key_value_loop(rest, acc <> "\r")
-        "\"" -> basic_key_value_loop(rest, acc <> "\"")
-        "\\" -> basic_key_value_loop(rest, acc <> "\\")
-        "e" -> basic_key_value_loop(rest, acc <> "\u{001B}")
+        "b" -> basic_string_value_loop(rest, acc <> "\u{0008}")
+        "t" -> basic_string_value_loop(rest, acc <> "\t")
+        "n" -> basic_string_value_loop(rest, acc <> "\n")
+        "f" -> basic_string_value_loop(rest, acc <> "\u{000C}")
+        "r" -> basic_string_value_loop(rest, acc <> "\r")
+        "\"" -> basic_string_value_loop(rest, acc <> "\"")
+        "\\" -> basic_string_value_loop(rest, acc <> "\\")
+        "e" -> basic_string_value_loop(rest, acc <> "\u{001B}")
         "x" -> {
           let #(escape, remaining) = take_chars(rest, 2, "")
-          basic_key_value_loop(
+          basic_string_value_loop(
             remaining,
             acc <> unicode_escape_to_string(escape),
           )
         }
         "u" -> {
           let #(escape, remaining) = take_chars(rest, 4, "")
-          basic_key_value_loop(
+          basic_string_value_loop(
             remaining,
             acc <> unicode_escape_to_string(escape),
           )
         }
         "U" -> {
           let #(escape, remaining) = take_chars(rest, 8, "")
-          basic_key_value_loop(
+          basic_string_value_loop(
             remaining,
             acc <> unicode_escape_to_string(escape),
           )
         }
-        _ -> basic_key_value_loop(rest, acc <> "\\" <> escaped)
+        _ -> basic_string_value_loop(rest, acc <> "\\" <> escaped)
       }
-    [char, ..rest] -> basic_key_value_loop(rest, acc <> char)
+    [char, ..rest] -> basic_string_value_loop(rest, acc <> char)
   }
 }
 

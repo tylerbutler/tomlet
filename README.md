@@ -174,11 +174,17 @@ that item. If you remove or replace an item, `set_array` removes its attached
 comments. It keeps standalone comments before the closing bracket, even if you
 remove all items. New arrays use flow style (`[a, b, c]`).
 
-The `set_*` helpers can replace existing values inside inline tables, such as
-`["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside an
-existing inline table are reported as `InlineTableInsertUnsupported`; create
-those keys by rewriting the table shape explicitly rather than relying on
-implicit insertion.
+Use the `set_*` helpers to replace or insert values inside inline tables.
+For example, `set_array(doc, ["tools", "licence_audit", "deny"], [])` changes
+`licence_audit = { allow = ["MIT"] }` under `[tools]` to
+`licence_audit = { allow = ["MIT"], deny = [] }`.
+Missing intermediate parents use dotted keys inside the nearest existing inline
+table. An edit keeps the table inline and appends new entries after existing
+ones. Inline tables with comments keep their source layout; other inline
+tables use default spacing. A scalar or array that blocks the path, or an
+existing dotted key below the requested path, causes `KeyConflict`.
+The `set_*` helpers also return `KeyConflict` for paths through arrays of
+tables, since those paths do not select a record to edit.
 
 Structural read values that cannot be represented in a write context are
 rejected explicitly. For example, passing `StandardTableValue` or

@@ -235,7 +235,7 @@ pub fn inline_table_comments_before_nested_array_do_not_break_parsing_test() {
       "pkg = { allow = # before array\n [\n  1, # one\n] }\n",
       ["pkg", "allow"],
       [tomlet.IntValue(1), tomlet.IntValue(2)],
-      "pkg = { allow = [\n  1, # one\n  2,\n] }\n",
+      "pkg = { allow = # before array\n [\n  1, # one\n  2,\n] }\n",
     )
 }
 
@@ -251,6 +251,19 @@ pub fn unicode_values_keep_closing_comments_test() {
         "x = [\n  \"" <> text <> "\",\n  \"extra\",\n  # closing\n]\n",
       )
   })
+}
+
+pub fn decoded_string_items_keep_original_source_and_comments_test() {
+  let input = "x = [\n  \"\\u2603\", # keep\n]\n"
+  let _edited =
+    check_edit(input, ["x"], [tomlet.StringValue("\u{2603}")], input)
+  let _edited =
+    check_edit(
+      input,
+      ["x"],
+      [tomlet.StringValue("\u{2603}"), tomlet.StringValue("extra")],
+      "x = [\n  \"\\u2603\", # keep\n  \"extra\",\n]\n",
+    )
 }
 
 pub fn unicode_values_keep_inline_comments_test() {
