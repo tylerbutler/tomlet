@@ -238,3 +238,81 @@ pub fn inline_table_comments_before_nested_array_do_not_break_parsing_test() {
       "pkg = { allow = [\n  1, # one\n  2,\n] }\n",
     )
 }
+
+pub fn unicode_values_keep_closing_comments_test() {
+  list.each(["\u{2603}", "\u{1F98A}", "e\u{301}"], fn(text) {
+    let input = "x = [\n  \"" <> text <> "\"\n  # closing\n]\n"
+    let _edited = check_edit(input, ["x"], [], "x = [\n  # closing\n]\n")
+    let _edited =
+      check_edit(
+        input,
+        ["x"],
+        [tomlet.StringValue(text), tomlet.StringValue("extra")],
+        "x = [\n  \"" <> text <> "\",\n  \"extra\",\n  # closing\n]\n",
+      )
+  })
+}
+
+pub fn unicode_values_keep_inline_comments_test() {
+  list.each(["\u{2603}", "\u{1F98A}", "e\u{301}"], fn(text) {
+    let input = "x = [\n  \"" <> text <> "\" # keep\n  # closing\n]\n"
+    let _edited =
+      check_edit(
+        input,
+        ["x"],
+        [tomlet.StringValue(text), tomlet.StringValue("extra")],
+        "x = [\n  \"" <> text <> "\", # keep\n  \"extra\",\n  # closing\n]\n",
+      )
+    let _edited = check_edit(input, ["x"], [], "x = [\n  # closing\n]\n")
+  })
+}
+
+pub fn multiline_quote_endings_preserve_array_boundaries_test() {
+  list.each(["\"", "'"], fn(quote) {
+    list.each([3, 4, 5], fn(count) {
+      let source =
+        string.repeat(quote, 3) <> "abc" <> string.repeat(quote, count)
+      let assert Ok(value) = tomlet.parse_value(source)
+      list.each([" ", "\n", " # after\n", ", # after\n", ", 1"], fn(suffix) {
+        let input = "x = [" <> source <> suffix <> "]\n"
+        let items = case suffix {
+          ", 1" -> [value, tomlet.IntValue(1)]
+          _ -> [value]
+        }
+        let assert Ok(doc) = tomlet.parse(input)
+        assert tomlet.get(doc, ["x"]) == Ok(tomlet.ArrayValue(items))
+        let assert Ok(unchanged) = tomlet.set_array(doc, ["x"], items)
+        assert tomlet.to_string(unchanged) == input
+        let updated_items = list.append(items, [tomlet.BoolValue(True)])
+        let assert Ok(edited) = tomlet.set_array(doc, ["x"], updated_items)
+        let output = tomlet.to_string(edited)
+        assert string.contains(output, source)
+        let assert Ok(reparsed) = tomlet.parse(output)
+        assert tomlet.get(reparsed, ["x"])
+          == Ok(tomlet.ArrayValue(updated_items))
+      })
+      let assert Ok(doc) = tomlet.parse("x = { s = " <> source <> " }\n")
+      assert tomlet.get(doc, ["x", "s"]) == Ok(value)
+    })
+  })
+}
+
+pub fn appending_to_large_existing_array_is_stack_safe_test() {
+  let items =
+    list.repeat(Nil, 8000)
+    |> list.index_map(fn(_, index) { tomlet.IntValue(index) })
+  let assert Ok(doc) = tomlet.set_array(tomlet.new(), ["x"], items)
+  let updated_items = list.append(items, [tomlet.IntValue(8000)])
+  let assert Ok(edited) = tomlet.set_array(doc, ["x"], updated_items)
+  assert tomlet.get(edited, ["x"]) == Ok(tomlet.ArrayValue(updated_items))
+  assert string.ends_with(tomlet.to_string(edited), ", 7999, 8000]\n")
+}
+
+pub fn searching_large_array_for_missing_item_is_stack_safe_test() {
+  let items =
+    list.repeat(Nil, 8000)
+    |> list.index_map(fn(_, index) { tomlet.IntValue(index) })
+  let assert Ok(doc) = tomlet.set_array(tomlet.new(), ["x"], items)
+  let assert Ok(edited) = tomlet.set_array(doc, ["x"], [tomlet.IntValue(-1)])
+  assert tomlet.to_string(edited) == "x = [-1]\n"
+}

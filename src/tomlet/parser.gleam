@@ -1126,9 +1126,11 @@ fn parse_array_items(
         [] -> Ok(#([], leading))
         _ -> Error(Unexpected("", ExpectedValue, body_offset + part_offset))
       })
-      let end = array_value_end(string.to_graphemes(source), StripNormal, 0, 0)
-      let value_text = string.slice(source, 0, end)
-      let suffix = string.drop_start(source, end)
+      let chars = string.to_graphemes(source)
+      let end = array_value_end(chars, StripNormal, 0, 0)
+      let #(value_chars, suffix_chars) = list.split(chars, end)
+      let value_text = string.concat(value_chars)
+      let suffix = string.concat(suffix_chars)
       use value <- result.try(parse_value(
         value_text,
         body_offset + part_offset + string.byte_size(leading),
@@ -1406,10 +1408,18 @@ fn strip_state_step(
 
     StripMultiBasic, ["\\", escaped, ..rest] ->
       StripStep(rest, StripMultiBasic, "\\" <> escaped)
+    StripMultiBasic, ["\"", "\"", "\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripNormal, "\"\"\"\"\"")
+    StripMultiBasic, ["\"", "\"", "\"", "\"", ..rest] ->
+      StripStep(rest, StripNormal, "\"\"\"\"")
     StripMultiBasic, ["\"", "\"", "\"", ..rest] ->
       StripStep(rest, StripNormal, "\"\"\"")
     StripMultiBasic, [char, ..rest] -> StripStep(rest, StripMultiBasic, char)
 
+    StripMultiLiteral, ["'", "'", "'", "'", "'", ..rest] ->
+      StripStep(rest, StripNormal, "'''''")
+    StripMultiLiteral, ["'", "'", "'", "'", ..rest] ->
+      StripStep(rest, StripNormal, "''''")
     StripMultiLiteral, ["'", "'", "'", ..rest] ->
       StripStep(rest, StripNormal, "'''")
     StripMultiLiteral, [char, ..rest] ->

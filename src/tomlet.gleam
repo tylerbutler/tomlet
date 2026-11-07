@@ -1487,12 +1487,9 @@ pub fn set_array(
       )
       let multiline = string.contains(source, "\n")
       let indentation = array_indentation(original)
-      use updated <- result.try(retain_array_items(
-        items,
-        original,
-        multiline,
-        indentation,
-      ))
+      use updated <- result.try(
+        retain_array_items(items, original, multiline, indentation, []),
+      )
       let source = emit_preserved_array(updated, closing, multiline)
       set_value(doc, key, ast.Array(updated, source, closing))
     }
@@ -1524,27 +1521,32 @@ fn retain_array_items(
   original: List(ast.ArrayItem),
   multiline: Bool,
   indentation: String,
+  retained: List(ast.ArrayItem),
 ) -> Result(List(ast.ArrayItem), EditError) {
   case items {
-    [] -> Ok([])
+    [] -> Ok(list.reverse(retained))
     [value, ..rest] -> {
-      let #(matched, remaining) = take_matching_array_item(original, value)
-      use item <- result.try(case matched {
+      let #(matched, remaining) = take_matching_array_item(original, value, [])
+      let item = case matched {
         Ok(item) -> Ok(item)
         Error(Nil) -> value_to_array_item(value)
-      })
-      let item = case multiline, item.leading {
-        True, ast.Trivia("") ->
-          ast.ArrayItem(..item, leading: ast.Trivia("\n" <> indentation))
-        _, _ -> item
       }
-      use tail <- result.try(retain_array_items(
-        rest,
-        remaining,
-        multiline,
-        indentation,
-      ))
-      Ok([item, ..tail])
+      // Keep recursion outside callbacks so JavaScript can compile it as a loop.
+      case item {
+        Error(error) -> Error(error)
+        Ok(item) -> {
+          // nolint: deep_nesting
+          let item = case multiline, item.leading {
+            True, ast.Trivia("") ->
+              ast.ArrayItem(..item, leading: ast.Trivia("\n" <> indentation))
+            _, _ -> item
+          }
+          retain_array_items(rest, remaining, multiline, indentation, [
+            item,
+            ..retained
+          ])
+        }
+      }
     }
   }
 }
@@ -1552,16 +1554,19 @@ fn retain_array_items(
 fn take_matching_array_item(
   items: List(ast.ArrayItem),
   value: Value,
+  skipped: List(ast.ArrayItem),
 ) -> #(Result(ast.ArrayItem, Nil), List(ast.ArrayItem)) {
   case items {
-    [] -> #(Error(Nil), [])
+    [] -> #(Error(Nil), list.reverse(skipped))
     [item, ..rest] ->
       case public_array_item(item) == value {
-        True -> #(Ok(item), rest)
-        False -> {
-          let #(matched, remaining) = take_matching_array_item(rest, value)
-          #(matched, [item, ..remaining])
-        }
+        True -> #(
+          Ok(item),
+          list.fold(skipped, rest, fn(remaining, skipped_item) {
+            [skipped_item, ..remaining]
+          }),
+        )
+        False -> take_matching_array_item(rest, value, [item, ..skipped])
       }
   }
 }
