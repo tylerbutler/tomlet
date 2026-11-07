@@ -1,4 +1,5 @@
 import gleam/list
+import gleam/string
 import gleeunit
 import tomlet
 import tomlet/ast
@@ -96,23 +97,42 @@ pub fn parse_array_of_ints_test() {
           ast.Trivia(""),
         ),
         ast.ArrayItem(
-          ast.Trivia(""),
+          ast.Trivia(" "),
           ast.Int(8001, source_text: "8001"),
           ast.Trivia(""),
         ),
         ast.ArrayItem(
-          ast.Trivia(""),
+          ast.Trivia(" "),
           ast.Int(8002, source_text: "8002"),
           ast.Trivia(""),
         ),
       ],
       source_text: "[8000, 8001, 8002]",
+      closing_trivia: ast.Trivia(""),
     ))
 }
 
 pub fn parse_nested_arrays_test() {
-  let assert Ok(ast.Array([_, _], source_text: "[[1, 2], [3, 4]]")) =
+  let assert Ok(ast.Array([_, _], source_text: "[[1, 2], [3, 4]]", ..)) =
     parse_value("matrix = [[1, 2], [3, 4]]\n", ["matrix"])
+}
+
+pub fn parse_array_item_trivia_test() {
+  let assert Ok(ast.Array([ast.ArrayItem(leading, value, trailing)], _, closing)) =
+    parse_value("x = [\n  # before\n  0x1, # after\n  # closing\n]\n", ["x"])
+  assert leading == ast.Trivia("\n  # before\n  ")
+  assert value == ast.Int(1, "0x1")
+  assert trailing == ast.Trivia(" # after")
+  assert closing == ast.Trivia("\n  # closing\n")
+}
+
+pub fn array_error_offset_counts_comment_bytes_test() {
+  let prefix = "x = [1, # café\n "
+  assert tomlet.parse(prefix <> "@]\n")
+    == Error(tomlet.InvalidSyntax(
+      tomlet.ExpectedValue,
+      string.byte_size(prefix),
+    ))
 }
 
 pub fn parse_inline_table_test() {

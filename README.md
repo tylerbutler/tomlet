@@ -165,6 +165,15 @@ needed. Current edit helpers include `set_string`, `set_int`, `set_bool`,
 `insert_comment_before`. Construct typed date, time, and date-time values with
 `date_from_string`, `time_from_string`, and `datetime_from_string`.
 
+`set_array` leaves the document unchanged when you supply the same semantic
+values. For changed arrays, it keeps the source text and attached comments of
+unchanged items. It matches duplicate values one occurrence at a time in their
+original order, then writes items in your requested order. Same-line comments
+belong to the preceding item. Separate-line comments before an item belong to
+that item. If you remove or replace an item, `set_array` removes its attached
+comments. It keeps standalone comments before the closing bracket, even if you
+remove all items. New arrays use flow style (`[a, b, c]`).
+
 The `set_*` helpers can replace existing values inside inline tables, such as
 `["pkg", "name"]` in `pkg = { name = "tomato" }`. Missing nested keys inside an
 existing inline table are reported as `InlineTableInsertUnsupported`; create

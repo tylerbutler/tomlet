@@ -984,6 +984,15 @@ fn parse_scalar_value(
 }
 
 fn split_top_level_commas(text: String) -> List(#(String, Int)) {
+  text
+  |> split_array_parts
+  |> list.map(fn(part) {
+    let #(text, offset) = part
+    #(string.trim(text), offset + trim_start_byte_offset(text))
+  })
+}
+
+fn split_array_parts(text: String) -> List(#(String, Int)) {
   split_top_level_commas_loop(
     string.to_graphemes(text),
     0,
@@ -1003,11 +1012,19 @@ fn split_top_level_commas_loop(
   parts: List(#(String, Int)),
 ) -> List(#(String, Int)) {
   case state, chars {
-    _, [] ->
-      list.reverse([
-        #(string.trim(current), current_start + trim_start_byte_offset(current)),
-        ..parts
-      ])
+    _, [] -> list.reverse([#(current, current_start), ..parts])
+
+    StripNormal, ["#", ..] -> {
+      let #(comment, rest) = list.split_while(chars, fn(char) { char != "\n" })
+      split_top_level_commas_loop(
+        rest,
+        depth,
+        StripNormal,
+        current <> string.concat(comment),
+        current_start,
+        parts,
+      )
+    }
 
     StripNormal, [",", ..rest] if depth == 0 ->
       split_top_level_commas_loop(
@@ -1016,13 +1033,7 @@ fn split_top_level_commas_loop(
         StripNormal,
         "",
         current_start + string.byte_size(current) + 1,
-        [
-          #(
-            string.trim(current),
-            current_start + trim_start_byte_offset(current),
-          ),
-          ..parts
-        ],
+        [#(current, current_start), ..parts],
       )
     StripNormal, ["[", ..rest] ->
       split_top_level_commas_loop(
@@ -1094,52 +1105,111 @@ fn parse_array_value(
     text
     |> string.drop_start(1)
     |> string.drop_end(1)
-  let clean_body = strip_inline_comments_by_line(body)
-
-  case string.trim(clean_body) {
-    "" -> Ok(ast.Array([], text))
-    _ ->
-      case
-        parse_array_items(
-          split_top_level_commas(clean_body),
-          offset + 1,
-          version,
-        )
-      {
-        Ok(items) -> Ok(ast.Array(items, text))
-        Error(error) -> Error(error)
-      }
-  }
+  use #(items, closing) <- result.try(parse_array_items(
+    split_array_parts(body),
+    offset + 1,
+    version,
+  ))
+  Ok(ast.Array(items, text, ast.Trivia(closing)))
 }
 
 fn parse_array_items(
   parts: List(#(String, Int)),
   body_offset: Int,
   version: Version,
-) -> Result(List(ast.ArrayItem), ParseError) {
+) -> Result(#(List(ast.ArrayItem), String), ParseError) {
   case parts {
-    [] -> Ok([])
-    [#(part, part_offset), ..rest] ->
-      case string.trim(strip_inline_comments_by_line(part)) {
-        "" ->
-          case rest {
-            [] -> Ok([])
-            _ -> Error(Unexpected("", ExpectedValue, body_offset + part_offset))
-          }
-        clean_part ->
-          case parse_value(clean_part, body_offset + part_offset, version) {
-            Ok(value) ->
-              case parse_array_items(rest, body_offset, version) {
-                Ok(items) ->
-                  Ok([
-                    ast.ArrayItem(ast.Trivia(""), value, ast.Trivia("")),
-                    ..items
-                  ])
-                Error(error) -> Error(error)
-              }
-            Error(error) -> Error(error)
-          }
+    [] -> Ok(#([], ""))
+    [#(part, part_offset), ..rest] -> {
+      let #(leading, source) = take_array_trivia(string.to_graphemes(part), "")
+      use <- bool.guard(when: source == "", return: case rest {
+        [] -> Ok(#([], leading))
+        _ -> Error(Unexpected("", ExpectedValue, body_offset + part_offset))
+      })
+      let end = array_value_end(string.to_graphemes(source), StripNormal, 0, 0)
+      let value_text = string.slice(source, 0, end)
+      let suffix = string.drop_start(source, end)
+      use value <- result.try(parse_value(
+        value_text,
+        body_offset + part_offset + string.byte_size(leading),
+        version,
+      ))
+      let #(trailing, next_parts) = case rest {
+        [] -> {
+          let #(inline, closing) = split_array_inline_comment(suffix)
+          #(inline, [#(closing, part_offset + string.byte_size(part))])
+        }
+        [#(next, next_offset), ..tail] -> {
+          let #(inline, remaining) = split_array_inline_comment(next)
+          #(string.trim_end(suffix) <> inline, [
+            #(remaining, next_offset + string.byte_size(inline)),
+            ..tail
+          ])
+        }
       }
+      use #(items, closing) <- result.try(parse_array_items(
+        next_parts,
+        body_offset,
+        version,
+      ))
+      Ok(#(
+        [
+          ast.ArrayItem(ast.Trivia(leading), value, ast.Trivia(trailing)),
+          ..items
+        ],
+        closing,
+      ))
+    }
+  }
+}
+
+fn take_array_trivia(chars: List(String), trivia: String) -> #(String, String) {
+  case chars {
+    [char, ..rest]
+      if char == " " || char == "\t" || char == "\n" || char == "\r"
+    -> {
+      take_array_trivia(rest, trivia <> char)
+    }
+    ["#", ..] -> {
+      let #(comment, rest) = list.split_while(chars, fn(char) { char != "\n" })
+      take_array_trivia(rest, trivia <> string.concat(comment))
+    }
+    _ -> #(trivia, string.concat(chars))
+  }
+}
+
+fn split_array_inline_comment(text: String) -> #(String, String) {
+  use <- bool.guard(
+    when: !string.starts_with(string.trim_start(text), "#"),
+    return: #("", text),
+  )
+  case string.split_once(text, "\n") {
+    Ok(#(comment, remaining)) -> #(comment, "\n" <> remaining)
+    Error(Nil) -> #(text, "")
+  }
+}
+
+fn array_value_end(
+  chars: List(String),
+  state: StripState,
+  offset: Int,
+  end: Int,
+) -> Int {
+  case state, chars {
+    _, [] -> end
+    StripNormal, ["#", ..] -> {
+      let #(comment, rest) = list.split_while(chars, fn(char) { char != "\n" })
+      array_value_end(rest, state, offset + list.length(comment), end)
+    }
+    StripNormal, [char, ..rest]
+      if char == " " || char == "\t" || char == "\n" || char == "\r"
+    -> array_value_end(rest, state, offset + 1, end)
+    _, _ -> {
+      let StripStep(rest, next_state, consumed) =
+        strip_state_step(chars, state, False)
+      let next_offset = offset + string.length(consumed)
+      array_value_end(rest, next_state, next_offset, next_offset)
+    }
   }
 }
 
@@ -1169,7 +1239,7 @@ fn parse_inline_table_value(
     _ ->
       case
         parse_inline_entries(
-          split_top_level_commas(clean_body),
+          split_top_level_commas(body),
           offset + 1,
           [],
           version,
@@ -1231,11 +1301,11 @@ fn parse_inline_entries(
   case parts {
     [] -> Ok([])
     [#(part, part_offset), ..rest] -> {
-      let entry_offset = body_offset + part_offset
+      let #(leading, part) = take_array_trivia(string.to_graphemes(part), "")
+      let entry_offset = body_offset + part_offset + string.byte_size(leading)
       // A whitespace-only segment is normally invalid. In TOML 1.1 a single
       // trailing comma before `}` produces an empty final segment, which is
-      // permitted; in 1.0 it remains an error. Comments were already stripped
-      // from the body before splitting, so a plain trim identifies it.
+      // permitted; in 1.0 it remains an error.
       case string.trim(part) {
         "" ->
           case version, rest {
@@ -1256,12 +1326,16 @@ fn parse_inline_entries(
             when: key_path_conflicts(seen, key_path),
             return: Error(Unexpected(part, ExpectedSyntax, entry_offset)),
           )
+          let #(value_leading, value_text) =
+            take_array_trivia(string.to_graphemes(raw_value), "")
+          let value_end =
+            array_value_end(string.to_graphemes(value_text), StripNormal, 0, 0)
           use value <- result.try(parse_value(
-            string.trim(strip_inline_comments_by_line(raw_value)),
+            string.slice(value_text, 0, value_end),
             entry_offset
               + string.byte_size(raw_key)
               + 1
-              + trim_start_byte_offset(raw_value),
+              + string.byte_size(value_leading),
             version,
           ))
           use entries <- result.try(parse_inline_entries(

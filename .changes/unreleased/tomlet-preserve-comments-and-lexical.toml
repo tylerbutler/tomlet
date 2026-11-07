@@ -1,0 +1,3 @@
+package = "tomlet"
+kind = "Fixed"
+body = "Preserve comments and lexical forms for unchanged array items during set_array edits; keep exact source for no-op updates."

@@ -47,7 +47,7 @@ pub type Value {
   Date(source_text: String)
   Time(source_text: String)
   DateTime(source_text: String)
-  Array(items: List(ArrayItem), source_text: String)
+  Array(items: List(ArrayItem), source_text: String, closing_trivia: Trivia)
   InlineTable(entries: List(InlineTableEntry), source_text: String)
   ArrayOfTables(items: List(Table))
 }
