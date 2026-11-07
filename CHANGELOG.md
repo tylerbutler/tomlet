@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0 - 2026-11-07
+
+### Added
+
+- Support inserting missing keys inside existing inline tables with set_* helpers, including nested and dotted paths. Preserve internal comments during edits and reject ambiguous paths through arrays of tables with KeyConflict.
+
+### Fixed
+
+- Decode basic-string escapes and multiline string values in accessors and decoders while preserving source text for round trips.
+- Fix inserting keys into implicit parent tables when only child tables or arrays of tables exist.
+- Preserve comments and lexical forms for unchanged array items during set_array edits; keep exact source for no-op updates. Handle Unicode trivia and multiline string boundaries on both targets, and prevent JavaScript stack overflow when editing large arrays.
+
 ## v1.4.1 - 2026-08-08
 
 
@@ -113,5 +125,3 @@ Tomlet parses TOML 1.0.0 into an opaque document and writes it back out with com
 ##### Edit support for dates, times, arrays, inline tables, and arrays of tables
 
 `date_from_string`, `time_from_string`, and `datetime_from_string` validate their input and produce the opaque `Date`, `Time`, and `DateTime` values, reporting invalid lexical forms as a `FormatError`. The setters `set_date`, `set_time`, `set_datetime`, `set_array`, and `set_inline_table` write these values at a key path, and `append_array_of_tables` appends a table to an array of tables, creating the array on first use.
-
-
