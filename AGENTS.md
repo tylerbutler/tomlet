@@ -65,9 +65,10 @@ byte-for-byte unless explicitly listed in `ROUNDTRIP_UNSUPPORTED`.
   source, edits preserve nearby comments, key order, trivia, and CRLF/LF style.
 - Keep date, time, and datetime public types opaque; expose lexical forms through
   `*_to_string` helpers.
-- Inline table edits may replace existing nested values, but inserting missing
-  nested keys inside an existing inline table returns
-  `InlineTableInsertUnsupported`.
+- Inline table edits can replace or insert nested values. Keep new keys inside
+  the nearest existing inline table, use dotted keys for missing parents, and
+  preserve internal comments. Return `KeyConflict` for paths blocked by existing
+  values or paths through arrays of tables that do not select a record.
 - Parse byte input with `parse_bytes` when UTF-8 or BOM validation matters.
   Invalid byte encodings should be rejected with `InvalidEncoding`.
 - User-facing changes should include a trellis changelog fragment in
