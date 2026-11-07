@@ -1,3 +1,0 @@
-package = "tomlet"
-kind = "Fixed"
-body = "Fix inserting keys into implicit parent tables when only child tables or arrays of tables exist."
