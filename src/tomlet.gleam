@@ -1126,8 +1126,7 @@ fn public_value(value: ast.Value) -> Value {
     ast.Date(source_text) -> DateValue(Date(source_text))
     ast.Time(source_text) -> TimeValue(Time(source_text))
     ast.DateTime(source_text) -> DateTimeValue(DateTime(source_text))
-    ast.Array(items, source_text: _) ->
-      ArrayValue(list.map(items, public_array_item))
+    ast.Array(items, ..) -> ArrayValue(list.map(items, public_array_item))
     ast.InlineTable(entries, source_text: _) ->
       InlineTableValue(list.map(entries, public_inline_table_entry))
     ast.ArrayOfTables(items) ->
@@ -1456,10 +1455,16 @@ pub fn set_datetime(
 
 /// Set a TOML array value at a key path.
 ///
-/// Items are emitted in order using a default flow-style representation
-/// (`[a, b, c]`). Existing values are replaced in place. Missing keys are
-/// inserted, creating a table header when needed. Inline-table insertion
-/// follows `set_string`.
+/// New arrays use a flow-style representation (`[a, b, c]`). Missing keys are
+/// inserted, creating a table header when needed. Inline-table insertion follows
+/// `set_string`. Setting an existing array to the same semantic values leaves
+/// the document unchanged.
+///
+/// Changed arrays retain source text and attached comments for unchanged items.
+/// Equal items are matched once each, in their original order. Same-line
+/// comments belong to the preceding item; separate-line comments before an item
+/// belong to that item. Removing or replacing an item removes its attached
+/// comments. Standalone comments before the closing bracket are retained.
 ///
 /// `StandardTableValue` and `ArrayOfTablesValue` items are rejected with
 /// `InvalidValue`; use `set_inline_table` or `append_array_of_tables` for
@@ -1479,11 +1484,126 @@ pub fn set_array(
   key: List(String),
   items: List(Value),
 ) -> Result(Document, EditError) {
-  case validate_values(items) {
-    Error(error) -> Error(error)
-    Ok(Nil) -> {
-      use ast_items <- result.try(list.try_map(items, value_to_array_item))
-      set_value(doc, key, ast.Array(ast_items, emit_array_items(ast_items)))
+  use _ <- result.try(validate_values(items))
+  use _ <- result.try(validate_edit_key(key))
+  case path.get(doc.root, key) {
+    Ok(ast.Array(original, source, closing)) -> {
+      use <- bool.guard(
+        when: list.map(original, public_array_item) == items,
+        return: Ok(doc),
+      )
+      let multiline = string.contains(source, "\n")
+      let indentation = array_indentation(original)
+      use updated <- result.try(
+        retain_array_items(items, original, multiline, indentation, []),
+      )
+      let source = emit_preserved_array(updated, closing, multiline)
+      set_value(doc, key, ast.Array(updated, source, closing))
+    }
+    Ok(_) | Error(Nil) -> {
+      use updated <- result.try(list.try_map(items, value_to_array_item))
+      set_value(
+        doc,
+        key,
+        ast.Array(updated, emit_array_items(updated), ast.Trivia("")),
+      )
+    }
+  }
+}
+
+fn array_indentation(items: List(ast.ArrayItem)) -> String {
+  items
+  |> list.find_map(fn(item) {
+    let ast.ArrayItem(leading: ast.Trivia(leading), ..) = item
+    case string.contains(leading, "\n") {
+      True -> leading |> string.split("\n") |> list.last
+      False -> Error(Nil)
+    }
+  })
+  |> result.unwrap("  ")
+}
+
+fn retain_array_items(
+  items: List(Value),
+  original: List(ast.ArrayItem),
+  multiline: Bool,
+  indentation: String,
+  retained: List(ast.ArrayItem),
+) -> Result(List(ast.ArrayItem), EditError) {
+  case items {
+    [] -> Ok(list.reverse(retained))
+    [value, ..rest] -> {
+      let #(matched, remaining) = take_matching_array_item(original, value, [])
+      let item = case matched {
+        Ok(item) -> Ok(item)
+        Error(Nil) -> value_to_array_item(value)
+      }
+      // Keep recursion outside callbacks so JavaScript can compile it as a loop.
+      case item {
+        Error(error) -> Error(error)
+        Ok(item) -> {
+          // nolint: deep_nesting
+          let item = case multiline, item.leading {
+            True, ast.Trivia("") ->
+              ast.ArrayItem(..item, leading: ast.Trivia("\n" <> indentation))
+            _, _ -> item
+          }
+          retain_array_items(rest, remaining, multiline, indentation, [
+            item,
+            ..retained
+          ])
+        }
+      }
+    }
+  }
+}
+
+fn take_matching_array_item(
+  items: List(ast.ArrayItem),
+  value: Value,
+  skipped: List(ast.ArrayItem),
+) -> #(Result(ast.ArrayItem, Nil), List(ast.ArrayItem)) {
+  case items {
+    [] -> #(Error(Nil), list.reverse(skipped))
+    [item, ..rest] ->
+      case public_array_item(item) == value {
+        True -> #(
+          Ok(item),
+          list.fold(skipped, rest, fn(remaining, skipped_item) {
+            [skipped_item, ..remaining]
+          }),
+        )
+        False -> take_matching_array_item(rest, value, [item, ..skipped])
+      }
+  }
+}
+
+fn emit_preserved_array(
+  items: List(ast.ArrayItem),
+  closing: ast.Trivia,
+  multiline: Bool,
+) -> String {
+  case multiline {
+    False -> emit_array_items(items)
+    True -> {
+      let body =
+        items
+        |> list.map(fn(item) {
+          let ast.ArrayItem(leading, value, trailing) = item
+          let leading = emit_trivia(leading)
+          let leading = case string.starts_with(leading, "\n") {
+            True -> leading
+            False -> "\n" <> leading
+          }
+          leading <> emit_value(value) <> "," <> emit_trivia(trailing)
+        })
+        |> string.concat
+      let closing = emit_trivia(closing)
+      let closing = case string.starts_with(closing, "\n") {
+        True -> closing
+        False -> "\n" <> closing
+      }
+      "[" <> body <> closing <> "]"
     }
   }
 }
@@ -1615,7 +1735,7 @@ fn value_to_ast(value: Value) -> Result(ast.Value, EditError) {
     DateTimeValue(d) -> Ok(ast.DateTime(d.text))
     ArrayValue(items) -> {
       use ast_items <- result.try(list.try_map(items, value_to_array_item))
-      Ok(ast.Array(ast_items, emit_array_items(ast_items)))
+      Ok(ast.Array(ast_items, emit_array_items(ast_items), ast.Trivia("")))
     }
     InlineTableValue(entries) -> {
       use ast_entries <- result.try(list.try_map(entries, value_to_inline_entry))
@@ -1995,7 +2115,7 @@ fn emit_value(value: ast.Value) -> String {
     ast.Date(source_text) -> source_text
     ast.Time(source_text) -> source_text
     ast.DateTime(source_text) -> source_text
-    ast.Array(_, source_text) -> source_text
+    ast.Array(_, source_text, _) -> source_text
     ast.InlineTable(_, source_text) -> source_text
     ast.ArrayOfTables(items) ->
       items
