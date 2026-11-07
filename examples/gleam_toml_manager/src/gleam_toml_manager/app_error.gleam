@@ -51,7 +51,10 @@ fn describe_get_error(error: tomlet.GetError) -> String {
   case error {
     tomlet.KeyNotFound(key) -> "key not found: " <> path_to_string(key)
     tomlet.WrongType(key, expected) ->
-      "key " <> path_to_string(key) <> " is not " <> expected_to_string(expected)
+      "key "
+      <> path_to_string(key)
+      <> " is not "
+      <> expected_to_string(expected)
   }
 }
 

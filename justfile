@@ -43,13 +43,13 @@ test-erlang:
 test-js:
     python3 scripts/run_corpus_tests.py --target javascript
 
-# Format code
+# Format all Gleam code, including examples
 format:
-    gleam format src test
+    gleam format
 
 # Check formatting without making changes
 format-check:
-    gleam format --check src test
+    gleam format --check
 
 # Type check without building
 check:

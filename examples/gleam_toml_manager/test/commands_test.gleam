@@ -5,7 +5,8 @@ import gleam_toml_manager/semver
 import gleeunit/should
 import tomlet
 
-const sample = "# Project metadata\nname = \"demo_app\"\nversion = \"1.2.3\"  # current\n\n[dependencies]\ngleam_stdlib = \">= 0.44.0\"\n"
+const sample =
+  "# Project metadata\nname = \"demo_app\"\nversion = \"1.2.3\"  # current\n\n[dependencies]\ngleam_stdlib = \">= 0.44.0\"\n"
 
 fn parse(input: String) -> tomlet.Document {
   let assert Ok(doc) = tomlet.parse(input)
@@ -54,13 +55,15 @@ pub fn bump_missing_version_errors_test() {
 }
 
 pub fn add_dependency_inserts_new_key_test() {
-  let assert Ok(doc) = commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
+  let assert Ok(doc) =
+    commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
   tomlet.get_string(doc, ["dependencies", "wisp"])
   |> should.equal(Ok(">= 1.0.0"))
 }
 
 pub fn add_dependency_preserves_existing_test() {
-  let assert Ok(doc) = commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
+  let assert Ok(doc) =
+    commands.add_dependency(parse(sample), "wisp", ">= 1.0.0")
   tomlet.get_string(doc, ["dependencies", "gleam_stdlib"])
   |> should.equal(Ok(">= 0.44.0"))
 }

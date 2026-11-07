@@ -9,8 +9,9 @@
 - `python3 scripts/run_corpus_tests.py valid` runs only valid TOML corpus checks.
 - `python3 scripts/run_corpus_tests.py invalid` runs only invalid TOML corpus checks.
 - `python3 scripts/run_corpus_tests.py` runs all corpus checks.
-- `just format` runs `gleam format src test`.
-- `just lint` runs `gleam format --check src test`.
+- `just format` runs `gleam format` across the full tree, including examples.
+- `just format-check` runs `gleam format --check`; CI uses this shared task.
+- `just lint` runs `just format-check` and glinter.
 - `just docs` runs `gleam docs build`.
 - `just ci` or `just pr` runs format, lint, test, build, and docs.
 

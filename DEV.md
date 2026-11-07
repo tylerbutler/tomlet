@@ -30,13 +30,17 @@ Run `just` to list available recipes.
 ```sh
 just build              # compile the package
 just test               # run unit tests and TOML corpus checks
-just format             # format src/ and test/
+just format             # format all Gleam files, including examples
+just format-check       # check formatting without changing files
 just lint               # check formatting and run glinter
 just ci                 # run the full validation workflow
 ```
 
 Short aliases are also available: `just b`, `just t`, `just f`, `just l`,
 `just c`, and `just pr`.
+
+CI uses `just format-check`. These formatting tasks cover the full tree,
+including examples, to match the check that Trellis runs before publication.
 
 ## Testing
 
