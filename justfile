@@ -88,8 +88,12 @@ docs:
 
 # === CI ===
 
+# Check licences and vulnerabilities for all locked dependencies
+audit:
+    licence_audit check --checks=all
+
 # Full validation workflow
-ci: format-check glint check test build-strict build-strict-js docs
+ci: format-check glint check audit test build-strict build-strict-js docs
 
 alias pr := ci
 alias cl := change

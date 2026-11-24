@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Attest SBOM
     env:
-      # licence_audit v0.2.0 contains BEAM files compiled with OTP 28.
+      # The licence_audit escript requires OTP 28.
       MISE_ERLANG_VERSION: "28"
     permissions:
       contents: write
@@ -71,6 +71,13 @@ jobs:
         with:
           subject-path: dist/tomlet-${{ github.ref_name }}.tar.gz
           sbom-path: dist/tomlet-${{ github.ref_name }}.cdx.json
+
+      - name: Attest release artifact provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # ratchet:actions/attest@v4
+        with:
+          subject-path: |
+            dist/tomlet-${{ github.ref_name }}.tar.gz
+            dist/tomlet-${{ github.ref_name }}.cdx.json
 
       - name: Attach SBOM to GitHub Release
         env:
