@@ -17,9 +17,6 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup
 
-      - name: Setup trellis
-        uses: ./.github/actions/setup-trellis
-
       # Skips versions already on Hex, so a re-run after a partial failure is safe.
       - name: Publish to Hex.pm
         run: trellis publish --tag "$GITHUB_REF_NAME"
@@ -42,11 +39,6 @@ jobs:
 
       - name: Setup environment
         uses: ./.github/actions/setup
-
-      - name: Setup licence_audit
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # ratchet:jdx/mise-action@v4
-        with:
-          install_args: github:tylerbutler/licence_audit
 
       - name: Generate CycloneDX SBOM
         env:

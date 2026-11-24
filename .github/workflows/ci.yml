@@ -21,11 +21,6 @@ jobs:
       - name: Setup environment
         uses: ./.github/actions/setup
 
-      - name: Setup licence_audit
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # ratchet:jdx/mise-action@v4
-        with:
-          install_args: github:tylerbutler/licence_audit
-
       - name: Check licences and vulnerabilities
         run: just audit
 
