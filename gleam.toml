@@ -21,6 +21,11 @@ william = ">= 1.0.0 and < 2.0.0"
 gleeunit = ">= 1.0.0 and < 2.0.0"
 glinter = ">= 2.19.0 and < 3.0.0"
 
+[tools.licence_audit]
+allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC"]
+vuln_severity = "high"
+vuln_block_unknown = true
+
 [tools.glinter]
 include = ["src/", "test/"]
 

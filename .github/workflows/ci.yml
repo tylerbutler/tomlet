@@ -8,6 +8,20 @@ on:
   workflow_call:
 
 jobs:
+  audit:
+    runs-on: ubuntu-latest
+    name: Dependency audit
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+
+      - name: Check licences and vulnerabilities
+        run: just audit
+
   test-erlang:
     runs-on: ubuntu-latest
     strategy:

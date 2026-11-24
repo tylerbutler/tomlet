@@ -18,10 +18,11 @@ to run tasks and download Gleam package dependencies. With mise
 [shell activation](https://mise.jdx.dev/getting-started.html#activate-mise),
 run `just` directly; otherwise, use `mise exec -- just <recipe>`.
 
-CI installs tools from the same config. The test matrices override Erlang and
-Node versions with `MISE_ERLANG_VERSION` and `MISE_NODE_VERSION`. CI tests OTP
-27 and 28; Gleam 1.18.1 emits Erlang syntax that OTP 26 cannot compile. The SBOM
-job requires OTP 28 to run the pinned licence_audit release.
+The shared setup action installs all tools from `.mise.toml` once per job in
+CI and Publish. Each job has a separate runner. The test matrices override
+Erlang and Node versions with `MISE_ERLANG_VERSION` and `MISE_NODE_VERSION`.
+CI tests OTP 27 and 28; Gleam 1.18.1 emits Erlang syntax that OTP 26 cannot
+compile. The local default is OTP 27.
 
 ## Common tasks
 
@@ -33,6 +34,7 @@ just test               # run unit tests and TOML corpus checks
 just format             # format all Gleam files, including examples
 just format-check       # check formatting without changing files
 just lint               # check formatting and run glinter
+just audit              # check dependency licences and vulnerabilities
 just ci                 # run the full validation workflow
 ```
 
@@ -41,6 +43,24 @@ Short aliases are also available: `just b`, `just t`, `just f`, `just l`,
 
 CI uses `just format-check`. These formatting tasks cover the full tree,
 including examples, to match the check that Trellis runs before publication.
+
+## Dependency audits
+
+`just audit` runs `licence_audit check --checks=all` with the pinned
+`1.0.0-rc.3` release candidate. `just ci` and the CI dependency audit job run
+the same command. The audit includes production and development dependencies.
+
+The policy in `[tools.licence_audit]` in `gleam.toml` allows Apache-2.0, MIT,
+BSD-2-Clause, BSD-3-Clause, and ISC. The gate blocks high, critical, and
+unknown-severity advisories. It reads licence declarations from locked,
+checksum-verified Hex archives and queries OSV for vulnerabilities.
+Network or metadata errors fail the gate. Review findings before changing
+the policy or adding an exception.
+
+`mise install` selects the self-contained licence_audit binary for your
+platform. It bundles its own Erlang runtime, so the audit does not depend on
+the project's OTP version. If you installed this version as an escript
+before, replace it with `mise install --force github:tylerbutler/licence_audit`.
 
 ## Testing
 
@@ -125,7 +145,10 @@ Releases are automated with trellis:
 2. When that PR merges, `trellis tag create --github-release` creates the
    `vX.Y.Z` tag and GitHub Release.
 3. The tag push runs `trellis publish --tag`, which publishes to Hex, and
-   attaches an SBOM to the Release.
+   attaches an SBOM and source archive to the Release. The workflow creates
+   an SBOM attestation for the archive and build-provenance attestations for
+   the archive and SBOM document. These attestations cover the uploaded
+   source artifacts, not the Hex package bytes.
 
 ## Before opening a PR
 

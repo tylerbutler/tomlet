@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tomlet",
   "compatibility_date": "2026-10-28",
+  "previews": {},
   "assets": {
     "directory": "./dist"
   },
