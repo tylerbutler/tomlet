@@ -27,9 +27,6 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     name: Attest SBOM
-    env:
-      # The licence_audit escript requires OTP 28.
-      MISE_ERLANG_VERSION: "28"
     permissions:
       contents: write
       id-token: write

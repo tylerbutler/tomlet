@@ -13,8 +13,6 @@ jobs:
     name: Dependency audit
     permissions:
       contents: read
-    env:
-      MISE_ERLANG_VERSION: "28"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # ratchet:actions/checkout@v7
 

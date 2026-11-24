@@ -20,9 +20,9 @@ run `just` directly; otherwise, use `mise exec -- just <recipe>`.
 
 The shared setup action installs all tools from `.mise.toml` once per job in
 CI and Publish. Each job has a separate runner. The test matrices override
-Erlang and Node versions with `MISE_ERLANG_VERSION` and `MISE_NODE_VERSION`. CI tests OTP
-27 and 28; Gleam 1.18.1 emits Erlang syntax that OTP 26 cannot compile. The local
-default is OTP 28 because the pinned licence_audit escript requires it.
+Erlang and Node versions with `MISE_ERLANG_VERSION` and `MISE_NODE_VERSION`.
+CI tests OTP 27 and 28; Gleam 1.18.1 emits Erlang syntax that OTP 26 cannot
+compile. The local default is OTP 27.
 
 ## Common tasks
 
@@ -57,10 +57,10 @@ checksum-verified Hex archives and queries OSV for vulnerabilities.
 Network or metadata errors fail the gate. Review findings before changing
 the policy or adding an exception.
 
-Use OTP 28 or newer for the audit tool. `mise install` installs the pinned
-escript archive; the exact asset name excludes the release's runtime-bundled
-platform archives. Override the runtime with `MISE_ERLANG_VERSION=28` if
-your shell uses OTP 27.
+`mise install` selects the self-contained licence_audit binary for your
+platform. It bundles its own Erlang runtime, so the audit does not depend on
+the project's OTP version. If you installed this version as an escript
+before, replace it with `mise install --force github:tylerbutler/licence_audit`.
 
 ## Testing
 
